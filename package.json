@@ -1,0 +1,54 @@
+{
+  "name": "memorybank-mcp",
+  "version": "0.1.0",
+  "description": "MCP server over a memory_bank knowledge base: routing without reading, governance validation, dependency graph and governed writes",
+  "license": "MIT",
+  "author": "",
+  "type": "module",
+  "bin": {
+    "memorybank-mcp": "./dist/cli.js"
+  },
+  "main": "./dist/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "memory-bank",
+    "knowledge-base",
+    "documentation",
+    "governance",
+    "ssot",
+    "markdown",
+    "frontmatter",
+    "claude"
+  ],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "homepage": "",
+  "files": [
+    "dist",
+    "hooks",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "stats": "node dist/cli.js --stats --root"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "gray-matter": "^4.0.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.11"
+  }
+}
