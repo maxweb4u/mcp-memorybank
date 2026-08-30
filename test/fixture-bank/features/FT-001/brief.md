@@ -16,3 +16,8 @@ delivery_status: done
 ## What
 
 Raise the threshold.
+
+The L1 threshold is defined in [domain/rules.md](../../domain/rules.md), and the
+queue topology is described in ../../adr/ADR-001-queue-choice.md.
+
+The escalation ladder is governed by escalation-ladder.md, which this bank does not have.

@@ -210,8 +210,13 @@ function cycles(bank: Bank, scope?: string): Finding[] {
   return out
 }
 
+/**
+ * A markdown link carries the claim in its text and the path in its destination, and only the
+ * destination is authoritative: `owned by [domain/model.md](../../domain/model.md)` is correct
+ * prose, and reading the text instead reports it as broken.
+ */
 const RULE_REF =
-  /\b([A-Za-z][\w`, -]{4,60}?)\s+(?:is\s+|are\s+)?(?:defined|described|specified|owned|governed)\s+(?:by|in)\s+\[?`?([\w./-]+\.md)/gi
+  /\b([A-Za-z][\w`, -]{4,60}?)\s+(?:is\s+|are\s+)?(?:defined|described|specified|owned|governed)\s+(?:by|in)\s+(?:\[[^\]]*\]\(([^)\s]+\.md)[^)]*\)|`?([\w./-]+\.md))/gi
 
 /**
  * A document says "X is defined in Y.md" while Y.md does not resolve from that document.
@@ -253,7 +258,7 @@ async function unresolvedRuleReferences(bank: Bank, scope?: string): Promise<Fin
       let m: RegExpExecArray | null
       while ((m = RULE_REF.exec(line)) !== null) {
         const phrase = m[1]!.replace(/`/g, '').trim()
-        const targetRaw = m[2]!
+        const targetRaw = (m[2] ?? m[3])!
         const target = resolveTarget(doc.path, targetRaw)
         if (target === null) continue // escapes the root: a nested-bank reference, not a defect
         if (target === doc.path || bank.docs.has(target)) continue

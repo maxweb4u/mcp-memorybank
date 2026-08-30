@@ -14,7 +14,9 @@ audience: humans_and_agents
 Derived from [specification.md](specification.md). The spec answers "what and why"; this plan
 answers "in what order, and how do we know it works".
 
-Every number below is a measurement across 19 real banks (1153 documents, 8 MB), not an estimate.
+Every number below is a measurement across the real banks on my disk — nineteen of them, some
+thousand documents, 8 MB — not an estimate. The banks themselves are private; what follows are the
+numbers they produced.
 
 ## 0. Three decisions that change the spec
 
@@ -27,20 +29,20 @@ Before the plan, three forks the measurements settled. Everything else follows f
 hard enum from the spec would have rejected 101 documents by `doc_kind` and 215 by `doc_function`.
 
 **A document has a layer, and for ranking it matters more than the text.** The layer is derived from
-the first directory in the path. In AgentUpwork the delivery journal is 7% of the bank; in
-showmojo/backend it is 80%. Without a layer weight, `bank_route` on a large bank will systematically
-land on closed features instead of knowledge.
+the first directory in the path. In a young bank the delivery journal is 7% of the documents; in the
+largest one measured it is 80%. Without a layer weight, `bank_route` on a large bank will
+systematically land on closed features instead of knowledge.
 
-**Cross-bank edges are normal, not an error.** 35 `derived_from` edges leave the bank root (Passix —
-17, readtolearn/backend — 10, website — 5). Those are nested banks in a monorepo. The server marks
-such an edge `external` and does not count it as broken.
+**Cross-bank edges are normal, not an error.** 35 `derived_from` edges leave the bank root, spread
+over two monorepos with nested banks — 17 in one, 15 across three banks of the other. The server
+marks such an edge `external` and does not count it as broken.
 
 ## 1. How it works — the mechanics
 
 ### The index
 
-At startup: walk `<root>/**/*.md`, parse frontmatter, build the derived structures. 8 MB and 1153
-documents read in hundreds of milliseconds, so no watcher and no SQLite.
+At startup: walk `<root>/**/*.md`, parse frontmatter, build the derived structures. 8 MB across a
+thousand-odd documents read in hundreds of milliseconds, so no watcher and no SQLite.
 
 ```ts
 type Layer = 'dna' | 'knowledge' | 'decision' | 'delivery' | 'flow' | 'other'
@@ -85,8 +87,8 @@ Directory-to-layer mapping:
 **Invalidation.** On every call, `stat()` across all paths. Only files whose `mtime` changed are
 re-indexed. Files appearing and disappearing are caught by comparing the path sets.
 
-**Degraded mode.** If the bank has no `dna/` (5 banks out of 19 — Passix/frontend, Passix/backend,
-readtolearn/website, showmojo/MainProject, Seros), the server comes up with `bank_route`,
+**Degraded mode.** If the bank has no `dna/` — 5 banks of the 19, all of them either a stub or the
+outer shell of a monorepo — the server comes up with `bank_route`,
 `bank_read` and `bank_search`, and `bank_validate` returns a single warning: contract not found.
 
 ### `bank_route` ranking
@@ -136,8 +138,8 @@ reading the contract from `dna/`.
 
 CLI: `memorybank-mcp --root <path> --stats` prints statistics without starting MCP.
 
-**Readiness:** `--stats` gives 95 documents on AgentUpwork and 368 on showmojo/backend, zero parse
-errors across all 19 banks, 15 edges with `fit` recognised as the object form.
+**Readiness:** `--stats` gives 95 documents on the mid-sized bank and 368 on the largest, zero parse
+errors anywhere, 15 edges with `fit` recognised as the object form.
 
 ### E1 — Reads (~1–2 days)
 
@@ -146,8 +148,8 @@ errors across all 19 banks, 15 edges with `fit` recognised as the object form.
 - resource `memorybank://index`
 - resource `memorybank://schema/frontmatter` — serves the bank's `dna/frontmatter.md` as is
 
-**Readiness:** five control questions against AgentUpwork and five against showmojo/backend.
-The AgentUpwork control set:
+**Readiness:** five control questions against a mid-sized bank and five against the largest.
+The first control set, on a bank whose subject is a job-application agent:
 
 | Question | Expected first result |
 |---|---|
@@ -157,11 +159,10 @@ The AgentUpwork control set:
 | frontmatter rules | `dna/frontmatter.md` |
 | what to do when the session is blocked | `ops/account-safety.md` |
 
-Plus: no result set contains a document with `doc_function: template`; on showmojo at least 3 of the
-top 5 results are not from `features/`.
+Plus: no result set contains a document with `doc_function: template`; on the delivery-heavy bank at
+least 3 of the top 5 results are not from `features/`.
 
-`bank_read` with `section` on `crybot/tasks/active.md` (192 KB) returns one section, not the whole
-file.
+`bank_read` with `section` on a 192 KB task journal returns one section, not the whole file.
 
 ### E2 — Validation (~1–2 days)
 
@@ -191,7 +192,7 @@ Corrections to earlier estimates, produced by the implementation:
 - `broken-derived-from` — 38, not 43. In the draft measurement the object form
   `- path: ... / fit: ...` resolved as the path `path: ../x.md` and produced five false positives.
 - `missing-derived-from` — 1, not 39. The rule applies only where governance declares it ("Every
-  `active` non-root document must define `derived_from`" — 7 banks out of 19). crybot has 37
+  `active` non-root document must define `derived_from`" — 7 banks out of 19). One bank has 37
   documents with no `derived_from`, but its governance does not require one, so that is not a
   violation.
 - `cycle-in-derived-from` — 15 unique cycles. The typical shape: a section index derives from its own
@@ -200,15 +201,29 @@ Corrections to earlier estimates, produced by the implementation:
   Checking by words produced false positives and missed the real defect; checking path resolution is
   exact and suggests the correct path.
 
+**Two of those counts were inflated by the validator, not by the banks.** Recorded here as measured,
+and corrected later once the causes were found:
+
+- `broken-derived-from` 38 — of which 35 were the external edges above, counted as broken before the
+  `external` outcome existed. What remains is a handful.
+- `invalid-frontmatter` 22 — `gray-matter` memoises by input text and, after throwing, returns a
+  cached object whose entire frontmatter sits inside `content`. Documents parsed after a failing one
+  looked broken too. Once parsing went through a single call site, the count fell to exactly the
+  number of documents with an unquoted colon in `purpose`.
+
+The lesson is not about the numbers. A validator's own defects read as findings, and nothing in the
+output distinguishes them: both counts looked entirely plausible for months.
+
 **Rules split into structural and contract rules.** Structural ones (broken edges, invalid YAML, a
 second owner, orphans, unresolvable references) work even in a bank with no `dna/`. Contract ones
 (`missing-derived-from`, cycles, unknown values) apply only where the bank declared them itself — the
 server enforces the bank's rules, not its own.
 
-**Readiness:** a run across 19 banks finds both known AgentUpwork defects — the broken `derived_from`
-on `engineering/developer-docs-commands-safety.md` in `flows/feature-flow.md`, and the `Done` gate
-citing `testing-policy.md` by a path that does not resolve from `flows/` — and gives **zero** false
-positives on the 35 external edges (covered by a test against Passix, which has 17 of them).
+**Readiness:** a run across the banks finds both defects known in advance — the broken
+`derived_from` on `engineering/developer-docs-commands-safety.md` in `flows/feature-flow.md`, and the
+`Done` gate citing `testing-policy.md` by a path that does not resolve from `flows/` — and gives
+**zero** false positives on the 35 external edges, covered by a test against the monorepo that
+carries 17 of them.
 
 ### E3 — Graph (~1 day) — **done**
 
@@ -219,33 +234,34 @@ goes to `external`, a broken one to `broken`. `fit` is carried on the edge. A no
 default) keeps a hub document from dragging in the whole bank, and cycles are safe — a visited node
 is not expanded twice.
 
-**Verified:** `down` on `domain/rules.md` in AgentUpwork returns exactly the 8 documents that rest on
-the thresholds — 3 knowledge, 2 decisions, 3 features. `up` on `features/FT-SMD-843/brief.md` in
-showmojo returns 9 nodes and preserves all 4 `fit` values. `down` on `dna/governance.md` hits the
-ceiling and honestly sets `truncated: true`. On crybot (49 documents, 0 edges) it returns a single
-node without error. In Passix, `up` on a document of a nested bank shows the edge under `external`,
-not `broken`.
+**Verified:** `down` on a `domain/rules.md` returns exactly the 8 documents that rest on the
+thresholds — 3 knowledge, 2 decisions, 3 features. `up` on a feature brief in the largest bank
+returns 9 nodes and preserves all 4 `fit` values. `down` on `dna/governance.md` hits the ceiling and
+honestly sets `truncated: true`. On a bank of 49 documents with no edges at all it returns a single
+node without error. In a monorepo, `up` on a document of a nested bank shows the edge under
+`external`, not `broken`.
 
 ### E4 — Search and delta (~1 day) — **done**
 
 - `bank_search { query, docKind?, layer?, status?, limit? }` → `{ path, title, excerpt, line, score, hits }[]`
 - `bank_changed { since }` → `{ since, mode, repo?, changes, note? }`
 
-An in-memory inverted index, synced by `mtime` along with the main one. On showmojo — 368 documents,
-15,648 terms, 210 ms for a full build; after that only what changed.
+An in-memory inverted index, synced by `mtime` along with the main one. On the largest bank — 368
+documents — 15,648 terms and 210 ms for a full build; after that only what changed.
 
 The index stores both a compound token and its parts, but the **query** weights a whole token ten
-times its parts. Without that, `FT-SMD-843` would lift `features/README.md` — a registry with seventy
-`FT-SMD-*` lines — above the feature itself.
+times its parts. Without that, a query like `FT-042` would lift `features/README.md` — a registry
+with seventy `FT-*` lines — above the feature itself.
 
 `bank_changed` distinguishes two modes. A git ref gives a real delta: additions, modifications,
 deletions, renames, plus untracked files. An ISO date falls back to `mtime` and says honestly that it
-cannot see deletions and cannot tell a new document from a modified one. All 19 banks live inside git
-repositories, so git is the primary mode.
+cannot see deletions and cannot tell a new document from a modified one. Every bank measured lives
+inside a git repository, so git is the primary mode.
 
-**Verified:** searching `FT-SMD-843` in showmojo puts the package's own documents first; `REQ-01` in
-AgentUpwork finds only the delivery layer, with the exact line and its number; `bank_changed HEAD~5`
-returns 10 changes with their types; a nonexistent ref gives a clear error rather than an empty list.
+**Verified:** searching a feature identifier puts that feature's own documents above the registry
+that lists it; `REQ-01` finds only the delivery layer, with the exact line and its number;
+`bank_changed HEAD~5` returns 10 changes with their types; a nonexistent ref gives a clear error
+rather than an empty list.
 
 **Defect found later, by the generated acceptance suite.** `bank_changed` subtracted the repository
 root reported by git from the bank root as given. Those differ whenever the bank is reached through
@@ -261,7 +277,7 @@ generates in a temp directory.
 → `{ path, created, frontmatter, template, registeredIn, warnings, preview }`
 
 Templates in these banks are wrappers: the document to instantiate sits inside them as two fenced
-blocks under `## Instantiated Frontmatter` and `## Instantiated Body` (17 of AgentUpwork's 24
+blocks under `## Instantiated Frontmatter` and `## Instantiated Body` (17 of the 24
 templates; the rest are flat and get copied whole). The server unwraps the embedded contract,
 substitutes the title into the H1, fills the `date` placeholder and carries over `must_not_define`,
 which the template ships as governance — but discards the template's `derived_from` and
@@ -284,7 +300,7 @@ One side effect worth naming: a document created through `bank_create` physicall
 `invalid-frontmatter` defect — serialization quotes a value containing a colon. That is exactly the
 error class found in 22 documents of the corpus.
 
-**Verified:** on a copy of the AgentUpwork bank, an ADR is created from `flows/templates/adr/ADR-ID.md`,
+**Verified:** on a copy of a real bank, an ADR is created from `flows/templates/adr/ADR-ID.md`,
 registered as a table row in `adr/README.md` in the existing shape, and `bank_validate` afterwards
 returns exactly as many findings as before — 21. Writing to `_inbox` adds none either.
 
@@ -307,7 +323,7 @@ conditions hold: not a recursion (`stop_hook_active`), the project has a `memory
 tree is dirty, the session marker is not set yet. In other words, an "asked and left" session
 produces no notes at all.
 
-**Verified:** the full circuit on a copy of AgentUpwork — capture into `_inbox`, `--list-inbox`,
+**Verified:** the full circuit on a copy of a real bank — capture into `_inbox`, `--list-inbox`,
 promotion into `engineering/`, the entry in `engineering/README.md`, the document found by routing,
 `bank_validate` still at 21 findings. The hook's logic is verified across all four branches. Not
 verified: whether Claude Code actually loads the hook — in this session's sandbox, Stop hooks
@@ -315,7 +331,7 @@ registered neither from `.claude/settings.json` nor via `--settings`.
 
 ## 3. Not in v1
 
-- **`bank_owner` as a separate tool.** One SSoT conflict across 1153 documents; `canonical_for` is
+- **`bank_owner` as a separate tool.** A single SSoT conflict across every bank measured; `canonical_for` is
   filled on 29% and completely absent in 8 banks. The `ssot-conflict` rule stays in validation, but a
   separate tool does not pay for itself. Revisit when the annotation grows.
 - **Embeddings.** The threshold is a thousand documents *in one bank*; the current maximum is 368.
@@ -339,7 +355,7 @@ Three touch points, all in the existing `flows/feature-flow.md`, with no new met
 
 | Risk | How it shows up | Mitigation |
 |---|---|---|
-| Ranking skew on large banks | showmojo: 80% of documents are a delivery journal | layer multipliers, checked by the E1 control questions |
+| Ranking skew on large banks | in the largest bank, 80% of documents are a delivery journal | layer multipliers, checked by the E1 control questions |
 | Half the banks have no governance layer | 5 banks with no `dna/`, another 5 with a truncated one | degraded mode, validation switched off explicitly |
 | The `dna/` contract diverges between banks | byte-identical in only 5 of 14 | the contract is read from the bank's own copy, not from a reference one |
 | Scope creep into "the server does everything" | eight tools already in the spec | the "not in v1" section — a boundary on paper |

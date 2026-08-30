@@ -33,6 +33,6 @@ Governance documents (DNA, flows) use additional fields that are not part of the
 | Field | Values | Purpose |
 |-|-|-|
 | `doc_kind` | `governance`, `project`, `product`, `domain`, `prd`, `use_case`, `feature`, `feature-support`, `epic`, `process`, `prompt`, `engineering`, `ops`, `adr` | Document type or artifact layer |
-| `doc_function` | `canonical`, `index`, `template`, `reference` | Role: canonical owner of a fact, navigation index, template, or a reference that owns nothing |
+| `doc_function` | `canonical`, `index`, `template`, `reference`, `derived`, `roadmap`, `risk_register`, `decision_log`, `subissue_registry` | Role: canonical owner of a fact, navigation index, template, a reference that owns nothing, or a document derived from a canonical owner. The last four are the epic registries, each of which owns its own register rather than a fact |
 
 These fields are required for governance documents and recommended for product, domain, ops, engineering, and project documents so agents can distinguish the knowledge layer and file role.

@@ -39,6 +39,15 @@ describe('rules that fire on the fixture', () => {
     expect(of('invalid-frontmatter').map((f) => f.path)).toEqual(['broken/bad-yaml.md'])
   })
 
+  it('reads a rule reference through the link destination, not the link text', () => {
+    const refs = of('unresolved-rule-reference')
+    // [domain/rules.md](../../domain/rules.md) is correct prose: the claim is in the text,
+    // the path is in the destination, and only the destination is authoritative.
+    expect(refs.map((f) => f.message)).toEqual([
+      expect.stringContaining('escalation-ladder.md'),
+    ])
+  })
+
   it('is ordered by measured productivity, errors readable first', () => {
     const rules = [...new Set(findings.map((f) => f.rule))]
     expect(rules.indexOf('invalid-frontmatter')).toBeLessThan(rules.indexOf('ssot-conflict'))

@@ -13,7 +13,7 @@ Specification. No code.
 
 ## 1. The problem
 
-Four projects — AgentUpwork, Passix, TeaderBook, imgToHomestyler — use one and the same
+Four projects of mine use one and the same
 knowledge base structure: governed documents with YAML frontmatter, SSoT ("every fact has
 exactly one home"), navigation through indexes, ADRs, feature packages.
 
@@ -23,7 +23,7 @@ true.
 
 **Navigation costs context.** To answer a question, the agent walks
 `memory_bank/README.md` → section index → document. Three full reads, the first two of
-which exist only to learn a path. The AgentUpwork bank is already around 40 documents;
+which exist only to learn a path. The largest of those banks is already around 40 documents;
 it gets worse from there.
 
 **Nobody checks governance.** The `canonical_for`, `must_not_define` and `derived_from`
@@ -222,11 +222,11 @@ For carrying state between sessions: what changed since last time.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Language | TypeScript, Node 22 | The official SDK, and it is also what AgentUpwork and crybot use |
+| Language | TypeScript, Node 22 | The official SDK, and it is what the projects around it already use |
 | SDK | `@modelcontextprotocol/sdk` | Official |
 | Transport | stdio | The server is local, one per project. HTTP would add authentication for no gain |
 | Frontmatter | `gray-matter` | — |
-| Validation | `zod` | Gives both runtime checking and types; the same approach as AgentUpwork |
+| Validation | `zod` | Gives both runtime checking and types, and it is already the house choice |
 | Search | An in-memory inverted index of our own | On hundreds of documents, SQLite FTS5 is a dependency for nothing |
 | Tests | `vitest` plus a fixture bank with deliberate violations | Validation rules without negative tests are meaningless |
 
@@ -257,7 +257,7 @@ Written down so that future work does not drift in here.
 
 | Stage | Contents | Readiness signal |
 |---|---|---|
-| **E1** | Index, `bank_route`, `bank_read`, the `memorybank://index` resource | The agent answers a question about the AgentUpwork bank without reading `README.md` |
+| **E1** | Index, `bank_route`, `bank_read`, the `memorybank://index` resource | The agent answers a question about a real bank without reading `README.md` |
 | **E2** | `bank_validate`, `bank_owner`, the `health` resource | A run across the four live banks finds at least one genuine violation |
 | **E3** | `bank_graph`, `bank_search`, `bank_changed` | "What breaks if I change this threshold" is answered in one call |
 | **E4** | `bank_create`, templates, prompts | A new ADR is created and registered with no manual steps |

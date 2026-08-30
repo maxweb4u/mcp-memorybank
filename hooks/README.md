@@ -18,6 +18,25 @@ The hook deliberately does nothing unless all four conditions hold:
 
 The marker is a file at `$TMPDIR/memorybank-capture-<session_id>`.
 
+## Reminding you the queue has grown
+
+Capture is worth nothing if nobody empties the quarantine, and a folder inside the bank is easy not
+to look at. So the same hook, in the same message, says how many notes are waiting once the queue
+crosses a threshold:
+
+| Variable | Default | Fires when |
+|---|---|---|
+| `MEMORYBANK_INBOX_LIMIT` | 8 | that many notes are waiting |
+| `MEMORYBANK_INBOX_STALE_DAYS` | 14 | any one note has waited longer |
+
+`README.md` in `_inbox/` is not counted. The reminder is a sentence to the user and nothing more —
+the hook never asks the agent to review or promote, because emptying the quarantine is a decision
+and decisions are yours.
+
+It rides on the capture message, so it inherits the same four conditions: a clean working tree stays
+silent, and so does a session that has already been asked. A queue can therefore sit unmentioned
+while you are not working in the project — which is the point, not a gap.
+
 ## Installation
 
 In a project that has a bank, `<project>/.claude/settings.json`:
@@ -27,13 +46,21 @@ In a project that has a bank, `<project>/.claude/settings.json`:
   "hooks": {
     "Stop": [
       {
-        "type": "command",
-        "command": "/absolute/path/memorybank/hooks/capture-to-inbox.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/memorybank/hooks/capture-to-inbox.sh"
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+The inner `hooks` array is not decoration: an entry written flat, as
+`"Stop": [{ "type": "command", ... }]`, does not register and reports no error. `Stop` takes no
+matcher, so the wrapping object carries nothing but that array.
 
 Requires `jq` and `git`. To confirm the hook is registered, run `/hooks` in an interactive session
 of that project.

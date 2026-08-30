@@ -7,6 +7,112 @@ Spec — [specification.md](specification.md), plan — [implementation-plan.md]
 Everything in the plan is done: **E0** index, **E1** reads, **E2** validation, **E3** graph,
 **E4** search and delta, **E5** writes.
 
+## How it works
+
+There is no database, no daemon and no configuration. A directory of markdown files is the entire
+state, and the server is a reader of it that happens to speak MCP. Everything it knows it re-derives
+from the files; delete its process and nothing is lost, because nothing was ever kept anywhere else.
+
+### The index, and why there is no watcher
+
+On startup the server walks the bank once, and on every call it walks it again: `readdir`, `stat`,
+and a parse only for the files whose `mtime` moved. A cold build of a 368-document bank takes about
+85 ms; the walk before an unchanged call costs 11–13 ms.
+
+That is why there is no file watcher. A watcher would save those milliseconds and buy an error class
+in exchange — an index that has quietly diverged from the disk, in a tool whose whole job is to be
+trusted about what the disk says. The cheap check wins on both counts.
+
+### What a document becomes
+
+Each file is parsed once into a record: the frontmatter fields, the second-level section headings
+with their line spans, byte size, mtime — and one thing the file does not contain, a **layer**
+computed from the path (`dna`, `knowledge`, `decision`, `delivery`, `flow`, `inbox`, `other`).
+
+Frontmatter goes through `gray-matter` in exactly one place. When the YAML is invalid — an unquoted
+colon in `purpose` is the common case — the document does not fall out of the index: its metadata is
+recovered line by line and the parse error is kept for `bank_validate` to report. A document that
+disappears from routing because of a typo is worse than one that ranks badly.
+
+### The contract comes from the bank
+
+`doc_kind`, `doc_function`, `status`, whether `derived_from` is mandatory, which document is the
+declared root — all of it is read out of the bank's own `dna/frontmatter.md` and `dna/governance.md`
+at refresh time. Nothing is hardcoded, and the sets are open.
+
+This is not politeness: banks disagree about their own vocabulary, and a fixed enum rejects a
+sizeable minority of real documents by `doc_kind` alone. A bank with no `dna/` still works: the server runs in degraded mode — reading,
+routing, search and the structural rules — and says so instead of enforcing a contract nobody
+declared.
+
+### Routing: ranking the header, never the prose
+
+`bank_route` answers "what should I read about this", and it reads only what a human wrote by hand
+about each document — never the body. Four fields, with fixed weights:
+
+| Field | Weight | Scored as |
+|---|---|---|
+| `canonical_for` | 5 | how much of a fact key the question covers, not whether one word of it matched |
+| `purpose` | 3 | word overlap |
+| `title` | 2 | word overlap |
+| section headings | 1 | the best-matching heading, which is also returned so the answer can be read section-scoped |
+
+The raw score is then multiplied, and the multipliers are where the ranking actually gets its
+judgement:
+
+- **Layer.** `knowledge` ×1.5, `decision` ×1.2, `dna` / `flow` / `other` ×1.0, `delivery` ×0.6,
+  `inbox` ×0.2. Delivery is damped because in a bank that has been in use for a while it is most of
+  the documents; without this a question about a rule returns the closed features that mention it.
+- **Status.** `active` ×1, `draft` ×0.7, `archived` ×0.2.
+- **Closed work.** `delivery_status: done` or `cancelled` halves the score again. A finished feature
+  is history, not an answer.
+- **Intent.** A question containing *why*, *rationale*, *instead of*, *почему*, *вместо* reweights
+  the whole run toward decisions: `decision` ×1.6, `knowledge` ×1.2. "Why X" and "what is X" are
+  different questions and should not return the same document first.
+
+Templates never appear in results: they are structurally identical to real documents and would
+flood every list.
+
+### Search: a different index for a different question
+
+`bank_search` is not a fallback for routing, it answers the other half. Routing ranks the
+hand-written header ("which document is *about* this"); search reads the prose ("where does this
+string actually appear"). Identifiers, error messages and literals live only in bodies.
+
+It builds an inverted index over document bodies, incrementally on the same mtime check. A query
+matches in three tiers by confidence — the word as typed weighs 10, its equivalent in the other
+language 6, a fragment of a compound token 1 — and documents matching every concept are ranked
+before documents matching some. The fragment tier is what keeps `FT-042` from lifting the
+`features/README.md` registry, with its seventy `FT-*` lines, above the feature itself.
+
+### Writing: one operation, or none
+
+`bank_create` writes the document, fills the frontmatter the contract asks for, and registers it in
+the section index **in the same call** — so the registration step cannot be forgotten, which is the
+single most common way a bank rots. Registration copies the shape of the last entry in that index,
+table row or bullet or numbered item, so a hand-written file is not reformatted.
+
+Before any of that it refuses, with the reason named: the path is taken, `derived_from` does not
+resolve, `canonical_for` is already owned by another document, the path leaves the bank root, or it
+does not end in `.md`. A refusal writes nothing at all — no partial file, no orphaned index line.
+
+Two rules follow from those gates, and they are the reason the writes are worth having: an SSoT
+conflict and a broken edge **cannot enter the bank through this server**. They can only arrive by
+editing a file behind its back.
+
+### The graph
+
+`bank_graph` walks `derived_from` breadth-first with a node ceiling, so a hub document does not drag
+in the whole bank and a cycle does not loop. Each edge lands in one of three outcomes: internal (a
+node), `external` (it leaves the bank root — in a monorepo, banks nest), or `broken`. `up` is what a
+document is built on; `down` is the blast radius of changing it.
+
+### What it will not do
+
+It does not edit an existing document — every write is a new file. It does not promote anything out
+of `_inbox/` on its own. It does not invent a schema, and it does not enforce a rule the bank has not
+declared. And it does not cross the bank root: a reference that leaves is external, not broken.
+
 ## Running it
 
 ```bash
@@ -41,7 +147,7 @@ node dist/cli.js --root <bank> --read domain/rules.md --section Thresholds
 node dist/cli.js --root <bank> --validate --summary
 node dist/cli.js --root <bank> --validate --rule broken-derived-from
 node dist/cli.js --root <bank> --graph domain/rules.md --direction down --depth 1
-node dist/cli.js --root <bank> --search "FT-SMD-843" --limit 5
+node dist/cli.js --root <bank> --search "FT-042" --limit 5
 node dist/cli.js --root <bank> --changed HEAD~5
 node dist/cli.js --root <bank> --create adr/ADR-...-name.md --kind adr --title "..." --purpose "..." --derived ../engineering/architecture.md --dry-run
 node dist/cli.js --root <new-path> --init "Project Name" --dry-run
@@ -91,20 +197,17 @@ however you like, the server does not keep imposing it.
 **A freshly created bank validates with zero findings** — which is the whole point of `bank_init`
 rather than copying someone else's bank: a copy would bring that bank's defects along with it.
 
-### Writing
+### Templates and the quarantine
+
+The mechanics of a write are under [How it works](#writing-one-operation-or-none); what follows is
+where the content comes from and where an unreviewed note goes.
 
 `bank_create` takes the template from the bank's own `flows/templates/`. Templates there are
 wrappers: the document to instantiate sits inside them as two blocks under
 `## Instantiated Frontmatter` and `## Instantiated Body`. The server unwraps exactly those,
 substitutes the title, fills the date placeholder, and carries over `must_not_define`, which the
-template ships as governance.
-
-It refuses to write if the path is taken, if `derived_from` does not resolve, if `canonical_for` is
-already owned, if the path leaves the bank root, or if it does not end in `.md`. An unknown
-`doc_kind` is a warning, not a refusal. `dryRun` shows the result and writes nothing.
-
-Index registration copies the shape of the last entry — table row, bullet, or numbered item — so a
-hand-written file does not get reformatted.
+template ships as governance. An unknown `doc_kind` is a warning, not a refusal, and `dryRun` shows
+the whole result — frontmatter, chosen template, index line — while writing nothing.
 
 `inbox: true` puts the document in `_inbox/` with `status: draft`, with no template and no
 registration. The `inbox` layer is ranked with a 0.2 multiplier and is exempt from the
@@ -127,7 +230,8 @@ appear in no `purpose` or `canonical_for`, so the result is empty rather than me
 
 `bank_route` and `bank_search` therefore treat a query word as a concept rather than a string. Each
 word carries its equivalents in the other language, drawn from a domain dictionary built from the
-most frequent terms in `title` / `purpose` / `canonical_for` across the corpus. Three things follow:
+most frequent terms in `title` / `purpose` / `canonical_for` across a body of real banks. Three
+things follow:
 
 - **A concept scores once.** Three English equivalents matching one `purpose` is one hit, not three,
   so an expanded query cannot outrank a literal one by sheer width.
@@ -137,31 +241,32 @@ most frequent terms in `title` / `purpose` / `canonical_for` across the corpus. 
   порогов / порогам; a verbal prefix is stripped only when what remains lands on a known stem, which
   is what lets `задеплоить` reach `deployment`.
 
-Measured on a real bank, the five Russian control questions return the same first document as their
-English counterparts. Search is symmetric: Cyrillic is a word character in the index, so a document
+Measured on a real bank, a Russian control question returns the same first document as its English
+counterpart. Search is symmetric: Cyrillic is a word character in the index, so a document
 quoting a Russian source is searchable, and a Russian query reaches English prose through the same
 dictionary.
 
-An unknown word is left exactly as typed — identifiers like `FT-SMD-843` and `filter_thresholds`
+An unknown word is left exactly as typed — identifiers like `FT-042` and `filter_thresholds`
 never go near the dictionary.
 
 ### Validation rules
 
-A run across 19 real banks — 321 findings.
-
-| Rule | Severity | Findings |
+| Rule | Severity | Catches |
 |---|---|---|
-| `unknown-enum-value` | warning | 212 |
-| `broken-derived-from` | error | 38 |
-| `invalid-frontmatter` | error | 22 |
-| `cycle-in-derived-from` | error | 15 |
-| `unregistered-doc` | warning | 13 |
-| `unresolved-rule-reference` | warning | 13 |
-| `no-contract` | warning | 6 |
-| `ssot-conflict` | error | 1 |
-| `missing-derived-from` | error | 1 |
-| `must-not-define-violated` | error | 0 |
-| `dangling-index-entry` | error | 0 |
+| `broken-derived-from` | error | an edge whose target does not resolve from the document that declares it |
+| `invalid-frontmatter` | error | YAML the parser rejects — usually an unquoted colon in `purpose` |
+| `cycle-in-derived-from` | error | A derives from B derives from A |
+| `ssot-conflict` | error | two documents claiming the same `canonical_for` key |
+| `missing-derived-from` | error | an `active` non-root document with no upstream |
+| `must-not-define-violated` | error | a document defining a key it declared it would not |
+| `dangling-index-entry` | error | an index linking to a file that is not there |
+| `unknown-enum-value` | warning | a `doc_kind` / `doc_function` / `status` outside what `dna/` declares |
+| `unregistered-doc` | warning | a document no index links to — unreachable by navigation |
+| `unresolved-rule-reference` | warning | prose citing a rule by a path that does not resolve |
+| `no-contract` | warning | the bank has no `dna/`, so contract rules cannot run |
+
+The order is not alphabetical: it is descending by how often each rule fired while the validator was
+being built, so the productive rules read first.
 
 Structural rules work in any bank. Contract rules (`missing-derived-from`, cycles,
 `unknown-enum-value`) apply only where the bank declared them itself in `dna/governance.md` — the
@@ -170,8 +275,8 @@ server enforces the bank's rules, not its own.
 ## Decisions where the implementation departs from the spec
 
 - **The schema is read from the bank.** `doc_kind` / `doc_function` / `status` are open sets, read
-  out of `dna/frontmatter.md` and `dna/governance.md`. A hard enum would have rejected 101 documents
-  out of 1153.
+  out of `dna/frontmatter.md` and `dna/governance.md`. A hard enum rejects a sizeable minority of
+  the documents in a real bank.
 - **A document has a layer** (`dna` / `knowledge` / `decision` / `delivery` / `flow`), derived from
   its path and weighted in ranking. Without it, routing misses on a bank where 80% of the documents
   are a delivery journal.
@@ -186,7 +291,7 @@ server enforces the bank's rules, not its own.
 - **`bank_route` and `bank_search` answer different questions.** The first ranks on the hand-written
   header ("which document is about this"), the second searches the prose ("where does this string
   appear"). In search, a whole token weighs ten times its own fragments: otherwise the query
-  `FT-SMD-843` would lift the `features/README.md` registry, with its seventy `FT-SMD-*` lines,
+  `FT-042` would lift the `features/README.md` registry, with its seventy `FT-*` lines,
   above the feature itself.
 - **A query is bilingual, the bank is not.** Ranking expands a query word into its equivalents in
   the other language and scores the concept once. Documents stay English; only the question may not
@@ -205,7 +310,7 @@ server enforces the bank's rules, not its own.
 npm test
 ```
 
-194 tests in three tiers, which exist for different reasons.
+195 tests in three tiers, which exist for different reasons.
 
 **Generated** — `test/acceptance-generated.test.ts` seeds a bank with the current `bank_init`, fills
 it through `bank_create` only, and then runs the plan's readiness criteria against that: routing in
@@ -218,8 +323,9 @@ server validates with zero findings, and still does after three refused writes.*
 owner of a fact, an orphan, broken YAML, a reference outside the root. It stays hand-written on
 purpose, because `bank_create` cannot produce any of them.
 
-**Corpus** — `test/acceptance.test.ts` measures the 19 real banks that drove every design decision.
-Those live outside the repository, so the suite is opt-in:
+**Corpus** — `test/acceptance.test.ts` runs the same criteria against whatever banks you point it
+at, which is how the design decisions were measured in the first place. Those banks are yours and
+live outside the repository, so the suite is opt-in:
 
 ```bash
 MEMORYBANK_TEST_ROOTS=/path/to/projects npm run test:corpus

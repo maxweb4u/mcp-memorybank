@@ -62,9 +62,9 @@ That is exactly what `unresolved-rule-reference` catches, and it finds it in **f
 Two ways out: define the rule in `testing-policy.md`, or drop the predicate from the gate. The second
 is more honest if the review is de facto not happening.
 
-**Done.** The section was ported from showmojo into AgentUpwork and focusreminder (which had no such
-rule); in the other three banks the rule was already there and only the path needed fixing.
-`unresolved-rule-reference` is at 0 across all 19 banks.
+**Done.** The section was ported from the one bank that had it into the two that did not; in the
+other three the rule was already there and only the path needed fixing. `unresolved-rule-reference`
+went to 0 everywhere.
 
 *(Note: these edits were subsequently reverted at the owner's request — nothing in the existing banks
 changes until the field test is done. The finding and the fix stand; applying them is queued behind
@@ -112,7 +112,7 @@ Undecided: this moves the "the server does not edit existing documents" boundary
 `delivery_status: done` when a commit mentioning `FT-XXX` merges, a plan moved to `status: archived`
 when it closes. Mechanical work with no judgement involved, but it needs a link to the PR.
 
-The motive in numbers: `archived` is set on **42 documents out of 1153** — de facto nobody performs
+The motive in numbers: `archived` is set on about **4% of documents** — de facto nobody performs
 the archiving step, even though `feature-flow.md` prescribes it.
 
 ### B-03. A code-versus-document drift detector
@@ -128,8 +128,8 @@ written went quietly stale. Requires the anchors to be annotated.
 ### B-04. Syncing `dna/` between banks
 
 The contract in `dna/frontmatter.md` matches byte for byte in only five of the fourteen banks that
-have a `dna/` at all. The server could show the diff: "governance in AgentUpwork is three months
-newer than in boxglb". Not migrate silently — show.
+have a `dna/` at all. The server could show the diff: "governance in this bank is three months newer
+than in that one". Not migrate silently — show.
 
 ### B-05. Russian-language queries to `bank_route` — **done**
 
@@ -143,7 +143,7 @@ once, so width cannot beat a literal match; a translation is discounted so the w
 wins a tie. A verbal prefix is stripped only when what remains lands on a known stem, which is what
 carries `задеплоить` to `deployment`.
 
-The doubt in the original entry was about payoff, and the measurement settled it: on AgentUpwork all
+The doubt in the original entry was about payoff, and the measurement settled it: on a real bank all
 five Russian control questions now return the same first document as their English counterparts,
 where before they returned nothing.
 
@@ -170,7 +170,7 @@ index. After that the bank lives on its own.
 The starter set was not to be invented: `dna/frontmatter.md` matches byte for byte across five banks
 — that is already a de facto template, just not packaged.
 
-Why this matters more than it looks: copying from AgentUpwork **would have spread into a sixth bank**
+Why this matters more than it looks: copying from an existing bank **would have spread into a sixth**
 the `feature-flow.md` defect we are fixing in five. Seeding from a versioned set does not do that.
 
 **Done.** The starter set is in `starter/`, the tool is `bank_init`, the CLI flag is `--init`. A fresh
@@ -184,9 +184,8 @@ and `reference` were not declared).
 
 The "not multi-project" decision from §8 of the spec stays right for indexing and validation, but it
 has a cost that is only visible now: **`bank_graph` stops at the bank boundary**, and in the nested
-banks of a monorepo the answer to "what breaks" is knowingly incomplete. There are 35 external edges:
-Passix 17, readtolearn 15, Seros 1. Passix has three nested banks, and the links between them are
-real.
+banks of a monorepo the answer to "what breaks" is knowingly incomplete. Across the banks I measured there are 35 such edges, and one project alone has three nested banks
+whose links to each other are real.
 
 A full multi-root is not needed. The cheap intermediate step: resolve an external edge into the
 neighbouring bank **for graph traversal only** — read the target file's header, without indexing or
@@ -211,7 +210,7 @@ exist. Check `npm pack` before submitting: the archive should contain only `dist
 
 ### C-03. Remove the tie to the author's machine — **done**
 
-`test/acceptance.test.ts` looked in `/Users/admin/Documents/docs/__projects` by default. The tests
+`test/acceptance.test.ts` looked in an absolute path on my own machine by default. The tests
 skipped correctly when the banks were absent, but that is exactly the problem: in a public
 repository, and in CI, the whole acceptance tier skipped and the build went green having verified
 nothing.
@@ -236,7 +235,7 @@ turns into "never".
 
 | Decision | Verdict | Revisit when |
 |---|---|---|
-| `bank_owner` as a separate tool | **no**, and more confidently than before | `canonical_for` passes 70% in some bank, or conflicts pass a dozen. Today: 29% and one conflict across 1153 documents |
+| `bank_owner` as a separate tool | **no**, and more confidently than before | `canonical_for` passes 70% in some bank, or conflicts pass a dozen. Today: 29% and a single conflict across every bank I measured |
 | Embeddings | **no**, but the criterion changed | Not "a thousand documents" (the maximum is 368, the counter is useless) but misses on a control set: the right document regularly outside the top 3. Lexical works because `purpose` is filled on 1147 of 1149 — a signal an embedding would not have |
 | Multi-root | **partly revisited** → B-06 | Indexing and validating several banks is not needed; traversing the graph across the boundary is |
 | Editing existing documents | **no** for full editing | The real decision is B-01 (`bank_append`), and it needs making: the shape of automatic capture depends on it |

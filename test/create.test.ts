@@ -373,7 +373,10 @@ describe('inbox listing', () => {
       purpose: 'Second capture.',
       inbox: true,
     })
-    const entries = inbox(bank, Date.now() + 3 * 86_400_000)
+    // Anchored on the newest file, not on the clock: mtime keeps sub-millisecond precision that
+    // Date.now() truncates away, and the floor in ageDays then reads three days as two.
+    const newest = Math.max(...bank.all().filter((d) => d.path.startsWith('_inbox/')).map((d) => d.mtimeMs))
+    const entries = inbox(bank, newest + 3 * 86_400_000)
     expect(entries.map((e) => e.path)).toEqual(['_inbox/a.md', '_inbox/b.md'])
     expect(entries.every((e) => e.ageDays === 3)).toBe(true)
   })

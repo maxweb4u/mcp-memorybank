@@ -32,7 +32,7 @@ Not "do the tools work" — that is covered by 140 tests. Three things the tests
 ## Step 0. The bank skeleton
 
 ```bash
-cd /Users/admin/Documents/docs/__projects/__my/modules/ebook_parser
+cd <projects>/ebook_parser
 node ../../mcp/memorybank/dist/cli.js --root "$PWD/memory_bank" --init "ebook_parser"
 ```
 
@@ -43,8 +43,8 @@ closure gate both point at.
 
 Check immediately after: `--validate` must give **0 findings**. A bank created by the server is clean
 by construction — which is exactly why we seed rather than copy someone else's bank: a copy would
-bring its defects along (from AgentUpwork that would be a broken edge and a reference to a
-nonexistent rule).
+bring its defects along — in the bank that would have been the donor, a broken edge and a reference
+to a nonexistent rule.
 
 ## Step 1. Wiring it up
 
@@ -56,9 +56,9 @@ nonexistent rule).
     "memorybank": {
       "command": "node",
       "args": [
-        "/Users/admin/Documents/docs/__projects/__my/mcp/memorybank/dist/cli.js",
+        "<projects>/memorybank/dist/cli.js",
         "--root",
-        "/Users/admin/Documents/docs/__projects/__my/modules/ebook_parser/memory_bank"
+        "<projects>/ebook_parser/memory_bank"
       ]
     }
   }
@@ -129,5 +129,5 @@ is the main result of the test.
 ## What the test will not show
 
 `bank_graph down` on a ten-document bank is close to meaningless — the blast radius is visible
-without it. That half of the server can only be tested on showmojo or AgentUpwork, and it is already
-covered by tests. Here we are looking at navigation and writing.
+without it. That half of the server can only be exercised on a bank that has years of history in it,
+and it is already covered by tests. Here we are looking at navigation and writing.
