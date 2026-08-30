@@ -1,6 +1,7 @@
 import { splitFrontmatter } from './parse.js'
 import type { Bank } from './bank.js'
 import type { Layer } from './types.js'
+import { expandTerms, RU_STOP } from './lang.js'
 
 export interface SearchHit {
   path: string
@@ -23,10 +24,14 @@ export interface SearchOptions {
   status?: string
 }
 
-/** Whole words as written: `ft-smd-843`, `req-04`, `filter_thresholds`. */
+/**
+ * Whole words as written: `ft-smd-843`, `req-04`, `filter_thresholds`. Cyrillic is a word character
+ * here: the banks are English, but a document may quote a Russian source, and a separator class that
+ * excluded Cyrillic would drop that text out of the index entirely rather than merely rank it low.
+ */
 export function searchTokens(text: string): string[] {
   const out: string[] = []
-  for (const token of text.toLowerCase().split(/[^a-z0-9_-]+/i)) {
+  for (const token of text.toLowerCase().split(/[^a-z0-9_\u0400-\u04ff-]+/i)) {
     const clean = token.replace(/^[-_]+|[-_]+$/g, '')
     if (clean.length >= 2) out.push(clean)
   }
@@ -53,9 +58,13 @@ function indexTokens(text: string): string[] {
   return out
 }
 
+/** A header hit through the dictionary counts, but below one the user typed outright. */
+const CROSS_LANGUAGE_DISCOUNT = 0.6
+
 const STOP = new Set([
   'the', 'and', 'for', 'that', 'this', 'with', 'from', 'are', 'was', 'were', 'not', 'but', 'its',
   'has', 'have', 'had', 'can', 'may', 'must', 'when', 'which', 'what', 'where', 'how', 'why',
+  ...RU_STOP,
 ])
 
 interface Posting {
@@ -127,6 +136,17 @@ export class SearchIndex {
     return this.postings.has(token)
   }
 
+  /**
+   * Indexed tokens starting with `prefix`. Russian inflects the ending, so a query for `пороги`
+   * only reaches an indexed `порогов` through the shared stem the dictionary supplies.
+   */
+  tokensWithPrefix(prefix: string): string[] {
+    if (prefix.length < 3) return []
+    const out: string[] = []
+    for (const token of this.postings.keys()) if (token.startsWith(prefix)) out.push(token)
+    return out
+  }
+
   /** Weighted occurrence count per document; `weight` separates whole tokens from fragments. */
   candidates(tokens: { token: string; weight: number }[]): Map<string, number> {
     const scores = new Map<string, number>()
@@ -140,12 +160,19 @@ export class SearchIndex {
     return scores
   }
 
-  /** Documents containing every query term, so a multi-word query narrows instead of widening. */
-  matchingAll(tokens: string[]): Set<string> {
+  /**
+   * Documents containing every query concept, so a multi-word query narrows instead of widening.
+   * A concept is one query word together with its equivalents: a document that has `threshold` but
+   * not `пороги` still satisfies the term the user typed in Russian.
+   */
+  matchingAll(concepts: string[][]): Set<string> {
     let acc: Set<string> | null = null
-    for (const token of tokens) {
-      const bucket = this.postings.get(token)
-      const here = new Set(bucket ? bucket.keys() : [])
+    for (const variants of concepts) {
+      const here = new Set<string>()
+      for (const variant of variants) {
+        const bucket = this.postings.get(variant)
+        if (bucket) for (const path of bucket.keys()) here.add(path)
+      }
       if (acc === null) acc = here
       else for (const path of [...acc]) if (!here.has(path)) acc.delete(path)
       if (acc.size === 0) break
@@ -188,13 +215,43 @@ export function search(bank: Bank, index: SearchIndex, query: string, opts: Sear
   const limit = opts.limit ?? 10
   const phrase = query.trim().toLowerCase()
 
+  // Three tiers, in descending confidence: the word as typed, its equivalent in the other
+  // language, and a fragment of a compound token. Only the first is what the user actually wrote.
   const weighted = primary.map((token) => ({ token, weight: 10 }))
-  for (const token of primary) {
-    // Fragments only widen the net; they never outweigh the token the user actually typed.
-    if (!index.has(token)) for (const part of tokenParts(token)) weighted.push({ token: part, weight: 1 })
+  const concepts: string[][] = []
+  const terms: string[] = [...primary]
+
+  for (const term of expandTerms(primary)) {
+    const variants = [term.literal]
+    for (const translation of term.translations) {
+      for (const form of index.has(translation) ? [translation] : index.tokensWithPrefix(translation)) {
+        weighted.push({ token: form, weight: 6 })
+        variants.push(form)
+        terms.push(form)
+      }
+    }
+    // The same-language stem catches inflection: `пороги` typed, `порогов` indexed.
+    if (term.stem) {
+      for (const form of index.tokensWithPrefix(term.stem)) {
+        if (form === term.literal) continue
+        weighted.push({ token: form, weight: 6 })
+        variants.push(form)
+      }
+    }
+    if (!index.has(term.literal)) {
+      // Fragments only widen the net; they never outweigh the token the user actually typed.
+      for (const part of tokenParts(term.literal)) {
+        weighted.push({ token: part, weight: 1 })
+        variants.push(part)
+      }
+    }
+    concepts.push(variants)
   }
 
-  const strict = index.matchingAll(primary)
+  // Everything added by the dictionary, i.e. the forms the user did not type.
+  const translated = terms.slice(primary.length)
+
+  const strict = index.matchingAll(concepts)
   const counts = index.candidates(weighted)
   const pool = strict.size > 0 ? strict : new Set(counts.keys())
 
@@ -213,12 +270,19 @@ export function search(bank: Bank, index: SearchIndex, query: string, opts: Sear
     const count = counts.get(path) ?? 0
     let score = count / 10
     if (phrase.includes(' ') && body.includes(phrase)) score += 25
-    if (doc.title.toLowerCase().includes(phrase)) score += 15
-    if (doc.purpose.toLowerCase().includes(phrase)) score += 10
+    // The phrase bonuses key off the query as typed, so a translated query would lose them entirely
+    // and fall back to raw frequency — which ranks whichever document merely says the word most.
+    // An equivalent hitting the header earns the same bonus, discounted like any translation.
+    const title = doc.title.toLowerCase()
+    const purpose = doc.purpose.toLowerCase()
+    if (title.includes(phrase)) score += 15
+    else if (translated.some((t) => title.includes(t))) score += 15 * CROSS_LANGUAGE_DISCOUNT
+    if (purpose.includes(phrase)) score += 10
+    else if (translated.some((t) => purpose.includes(t))) score += 10 * CROSS_LANGUAGE_DISCOUNT
     if (doc.status === 'archived') score *= 0.3
 
     const raw = bank.raw(path) ?? ''
-    const { excerpt, line } = excerptFor(body, raw, primary)
+    const { excerpt, line } = excerptFor(body, raw, terms)
 
     hits.push({
       path,

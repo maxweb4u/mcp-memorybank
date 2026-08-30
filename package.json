@@ -32,6 +32,7 @@
   "files": [
     "dist",
     "hooks",
+    "starter",
     "README.md",
     "LICENSE"
   ],
@@ -39,6 +40,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "test:corpus": "vitest run test/acceptance.test.ts",
     "stats": "node dist/cli.js --stats --root"
   },
   "dependencies": {

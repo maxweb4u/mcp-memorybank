@@ -1,64 +1,65 @@
 ---
-title: "MCP-сервер поверх memory_bank"
+title: "An MCP server over memory_bank"
 doc_kind: specification
 doc_function: canonical
-purpose: "Спецификация MCP-сервера, дающего агенту навигацию, проверку governance и запись в базу знаний memory_bank."
+purpose: "Specification of an MCP server that gives an agent navigation, governance checking, and writes into the memory_bank knowledge base."
 status: draft
 audience: humans_and_agents
 ---
 
-# MCP-сервер поверх memory_bank
+# An MCP server over memory_bank
 
-Спецификация. Кода нет.
+Specification. No code.
 
-## 1. Задача
+## 1. The problem
 
-В четырёх проектах — AgentUpwork, Passix, TeaderBook, imgToHomestyler — используется
-одна и та же структура базы знаний: governed-документы с YAML-frontmatter, SSoT
-(«у каждого факта ровно один дом»), навигация через индексы, ADR, feature-пакеты.
+Four projects — AgentUpwork, Passix, TeaderBook, imgToHomestyler — use one and the same
+knowledge base structure: governed documents with YAML frontmatter, SSoT ("every fact has
+exactly one home"), navigation through indexes, ADRs, feature packages.
 
-Система работает, но держится на дисциплине. Отсюда три проблемы, и все три —
-не про удобство, а про то, что база знаний со временем перестаёт быть правдой.
+The system works, but it rests on discipline. Which gives three problems, and none of
+them is about convenience — they are about the knowledge base gradually ceasing to be
+true.
 
-**Навигация стоит контекста.** Чтобы ответить на вопрос, агент идёт
-`memory_bank/README.md` → индекс раздела → документ. Три полных чтения, из которых
-первые два нужны только чтобы узнать путь. На банке AgentUpwork это уже около
-40 документов; дальше хуже.
+**Navigation costs context.** To answer a question, the agent walks
+`memory_bank/README.md` → section index → document. Three full reads, the first two of
+which exist only to learn a path. The AgentUpwork bank is already around 40 documents;
+it gets worse from there.
 
-**Governance никто не проверяет.** Поля `canonical_for`, `must_not_define`,
-`derived_from` — это контракт, но его соблюдение проверяет только внимательность
-человека или агента. Два документа могут объявить себя владельцами одного факта,
-и об этом никто не узнает, пока они не разойдутся.
+**Nobody checks governance.** The `canonical_for`, `must_not_define` and `derived_from`
+fields are a contract, but compliance is checked only by the attentiveness of a human or
+an agent. Two documents can both declare themselves owners of the same fact, and nobody
+finds out until they diverge.
 
-**Запись не попадает в индекс.** Новый документ надо создать по шаблону, проставить
-frontmatter и зарегистрировать в нужном README. Пропуск последнего шага не ломает
-ничего сразу — документ просто становится невидимым для навигации.
+**Writes do not reach the index.** A new document has to be created from a template, get
+its frontmatter, and be registered in the right README. Skipping the last step breaks
+nothing immediately — the document simply becomes invisible to navigation.
 
-## 2. Почему MCP-сервер, а не просто чтение файлов
+## 2. Why an MCP server rather than plain file reads
 
-Возражение справедливое: агент уже умеет читать файлы и делать grep. Сервер
-оправдан ровно тремя вещами, которых файловый доступ не даёт.
+The objection is fair: the agent can already read files and grep. The server is justified
+by exactly three things file access does not give.
 
-**Маршрутизация без чтения.** `bank_route` возвращает список путей с полями
-`purpose` из frontmatter — то есть ответ на вопрос «что читать» ценой одного
-вызова вместо трёх чтений. Поля `purpose` написаны руками именно как подсказки
-для навигации, и это лучший сигнал, чем полнотекстовый поиск по прозе.
+**Routing without reading.** `bank_route` returns a list of paths with their frontmatter
+`purpose` fields — that is, an answer to "what should I read" for the price of one call
+instead of three reads. `purpose` fields are written by hand precisely as navigation
+hints, and that is a better signal than full-text search over prose.
 
-**Проверки, которых на файловой системе нет.** Пересечение `canonical_for` между
-документами, битые `derived_from`, документы, не зарегистрированные ни в одном
-индексе, нарушения `must_not_define` — всё это свойства графа, а не отдельного
-файла. Их нельзя увидеть, читая по одному документу.
+**Checks the filesystem cannot express.** `canonical_for` overlap between documents,
+broken `derived_from`, documents registered in no index, `must_not_define` violations —
+all of these are properties of the graph, not of a single file. You cannot see them by
+reading one document at a time.
 
-**Запись, которая приземляется корректно.** `bank_create` ставит frontmatter по
-схеме, кладёт документ в правильную директорию и регистрирует в индексе одной
-операцией. Забыть шаг невозможно.
+**Writes that land correctly.** `bank_create` sets frontmatter per the schema, puts the
+document in the right directory, and registers it in the index in one operation. Skipping
+a step becomes impossible.
 
-Всё, что не попадает в эти три пункта, сервер делать не должен — обычное чтение
-файла остаётся обычным чтением файла.
+Anything outside those three the server should not do — an ordinary file read stays an
+ordinary file read.
 
-## 3. Модель данных
+## 3. Data model
 
-Индекс строится при старте обходом `memory_bank/**/*.md` и держится в памяти.
+The index is built at startup by walking `memory_bank/**/*.md` and kept in memory.
 
 ```ts
 type DocKind =
@@ -68,57 +69,57 @@ type DocKind =
 type DocFunction = 'canonical' | 'index' | 'reference'
 
 interface BankDoc {
-  path: string              // относительно корня memory_bank
+  path: string              // relative to the memory_bank root
   title: string
   docKind: DocKind
   docFunction: DocFunction
-  purpose: string           // главный сигнал для маршрутизации
+  purpose: string           // the primary routing signal
   status: 'draft' | 'active' | 'archived'
   derivedFrom: Array<{ path: string; fit?: string }>
-  canonicalFor: string[]    // ключи фактов, которыми документ владеет
+  canonicalFor: string[]    // keys of the facts this document owns
   mustNotDefine: string[]
   deliveryStatus?: 'planned' | 'in_progress' | 'done' | 'cancelled'
   decisionStatus?: 'proposed' | 'accepted' | 'superseded' | 'rejected'
-  sections: string[]        // заголовки второго уровня, для точечного чтения
-  registeredIn: string[]    // индексы, которые на него ссылаются
+  sections: string[]        // second-level headings, for section-scoped reads
+  registeredIn: string[]    // indexes that link to it
   mtime: number
   bytes: number
 }
 ```
 
-Производные структуры:
+Derived structures:
 
-- `ownerByKey: Map<string, string[]>` — из `canonicalFor`. Больше одного пути на
-  ключ означает нарушение SSoT.
-- `edges` — граф `derived_from`, для обхода вверх и вниз.
-- `orphans` — документы, отсутствующие во всех `registeredIn`.
+- `ownerByKey: Map<string, string[]>` — from `canonicalFor`. More than one path per key
+  means an SSoT violation.
+- `edges` — the `derived_from` graph, for walking up and down.
+- `orphans` — documents absent from every `registeredIn`.
 
-Инвалидация — по `mtime` при каждом вызове; полный переобход только если
-изменился хоть один файл. На нескольких сотнях документов это единицы
-миллисекунд, поэтому watcher не нужен.
+Invalidation is by `mtime` on each call; a full re-walk only if at least one file
+changed. On a few hundred documents that is single-digit milliseconds, so no watcher is
+needed.
 
-## 4. Инструменты
+## 4. Tools
 
-Восемь штук. Все параметры валидируются `zod`, схема отдаётся в MCP как JSON Schema.
+Eight of them. Every parameter is validated with `zod`, and the schema is exposed to MCP
+as JSON Schema.
 
 ### `bank_route`
 
-Главный инструмент. Отвечает на «что читать по этому вопросу».
+The primary tool. Answers "what should I read about this".
 
 ```ts
 { question: string, limit?: number /* =5 */, docKind?: DocKind }
 → { path, title, purpose, docKind, status, why }[]
 ```
 
-Ранжирование — по совпадению с `purpose`, `title`, `canonicalFor` и заголовками
-секций, с весами в этом порядке. Тело документа в ранжирование не входит: `purpose`
-писался как подсказка для навигации, проза — нет. Поле `why` объясняет, почему
-документ попал в выдачу; без него агент не может отличить точное попадание от
-случайного.
+Ranking is by match against `purpose`, `title`, `canonicalFor` and section headings, with
+weights in that order. The document body does not enter ranking: `purpose` was written as
+a navigation hint, prose was not. The `why` field explains why a document made the list;
+without it the agent cannot tell an exact hit from an accidental one.
 
 ### `bank_search`
 
-Полнотекстовый поиск, когда маршрутизации мало.
+Full-text search, for when routing is not enough.
 
 ```ts
 { query: string, docKind?: DocKind, status?: string, limit?: number /* =10 */ }
@@ -132,19 +133,20 @@ interface BankDoc {
 → { path, frontmatter, content }
 ```
 
-`section` возвращает один заголовок второго уровня с телом. На больших
-канонических документах это разница между 200 строками и 20.
+`section` returns one second-level heading with its body. On large canonical documents
+that is the difference between 200 lines and 20.
 
 ### `bank_owner`
 
-SSoT-запрос: кто владеет фактом.
+The SSoT query: who owns a fact.
 
 ```ts
-{ key: string }   // например 'filter_thresholds'
+{ key: string }   // e.g. 'filter_thresholds'
 → { key, owners: string[], conflict: boolean }
 ```
 
-`conflict: true` при более чем одном владельце — это ошибка базы, а не валидный ответ.
+`conflict: true` when there is more than one owner — that is a defect in the base, not a
+valid answer.
 
 ### `bank_graph`
 
@@ -153,28 +155,28 @@ SSoT-запрос: кто владеет фактом.
 → { nodes: { path, title, docKind }[], edges: { from, to, fit? }[] }
 ```
 
-`up` — на что документ опирается, `down` — что сломается при его изменении.
-Второе и есть основной сценарий: «я меняю этот порог, что ещё трогать».
+`up` — what the document rests on, `down` — what breaks if it changes. The second is the
+main scenario: "I am changing this threshold, what else do I have to touch".
 
 ### `bank_validate`
 
 ```ts
-{ scope?: string /* поддиректория */ }
+{ scope?: string /* subdirectory */ }
 → { severity: 'error' | 'warning', rule: string, path: string, message: string }[]
 ```
 
-Правила:
+Rules:
 
-| Правило | Severity | Что ловит |
+| Rule | Severity | What it catches |
 |---|---|---|
-| `frontmatter-schema` | error | Отсутствует `status` или поле не по схеме |
-| `ssot-conflict` | error | Один ключ `canonical_for` у нескольких документов |
-| `broken-derived-from` | error | `derived_from` указывает на несуществующий путь |
-| `must-not-define-violated` | error | Документ определяет ключ, который сам себе запретил |
-| `unregistered-doc` | warning | Документ не упомянут ни в одном индексе |
-| `stale-draft` | warning | `status: draft` старше N дней |
-| `orphan-adr` | warning | ADR ни из одного документа не упомянут |
-| `dangling-index-entry` | error | Индекс ссылается на несуществующий файл |
+| `frontmatter-schema` | error | `status` missing, or a field off-schema |
+| `ssot-conflict` | error | one `canonical_for` key claimed by several documents |
+| `broken-derived-from` | error | `derived_from` points at a path that does not exist |
+| `must-not-define-violated` | error | a document defines a key it forbade itself |
+| `unregistered-doc` | warning | the document is mentioned in no index |
+| `stale-draft` | warning | `status: draft` older than N days |
+| `orphan-adr` | warning | an ADR no document refers to |
+| `dangling-index-entry` | error | an index links to a file that does not exist |
 
 ### `bank_create`
 
@@ -184,94 +186,93 @@ SSoT-запрос: кто владеет фактом.
 → { path, registeredIn, frontmatter }
 ```
 
-Берёт шаблон по `docKind`, ставит frontmatter, пишет файл, добавляет строку в
-индекс раздела. Отказывается писать, если путь занят, если `canonicalFor`
-пересекается с существующим владельцем, или если `derivedFrom` указывает в пустоту.
+Takes the template for `docKind`, sets the frontmatter, writes the file, adds a line to
+the section index. Refuses to write if the path is taken, if `canonicalFor` overlaps an
+existing owner, or if `derivedFrom` points into nothing.
 
 ### `bank_changed`
 
 ```ts
-{ since: string }   // ISO-дата или git-ref
+{ since: string }   // ISO date or git ref
 → { path, title, changeKind: 'added' | 'modified' | 'deleted' }[]
 ```
 
-Для передачи состояния между сессиями: что изменилось с прошлого раза.
+For carrying state between sessions: what changed since last time.
 
-## 5. Ресурсы
+## 5. Resources
 
-| URI | Содержимое |
+| URI | Contents |
 |---|---|
-| `memorybank://index` | Аннотированный индекс: путь, `purpose`, `doc_kind`, `status` для всех документов |
-| `memorybank://doc/{path}` | Документ целиком |
-| `memorybank://schema/frontmatter` | Контракт frontmatter — чтобы агент не гадал о полях |
-| `memorybank://health` | Свежий результат `bank_validate` |
+| `memorybank://index` | Annotated index: path, `purpose`, `doc_kind`, `status` for every document |
+| `memorybank://doc/{path}` | A whole document |
+| `memorybank://schema/frontmatter` | The frontmatter contract — so the agent does not guess at fields |
+| `memorybank://health` | A fresh `bank_validate` run |
 
-`memorybank://index` — то, что агент читает первым в сессии вместо `README.md`.
+`memorybank://index` is what the agent reads first in a session, instead of `README.md`.
 
-## 6. Промпты
+## 6. Prompts
 
-| Имя | Назначение |
+| Name | Purpose |
 |---|---|
-| `route-then-read` | Сначала `bank_route`, потом `bank_read` только по верхним результатам. Дисциплина против чтения всего подряд |
-| `record-adr` | Собрать ADR: контекст, драйверы, таблица вариантов, решение, последствия. Формат уже устоялся в четырёх проектах |
-| `check-before-commit` | Прогнать `bank_validate` и объяснить каждую ошибку |
+| `route-then-read` | `bank_route` first, then `bank_read` on the top results only. Discipline against reading everything |
+| `record-adr` | Assemble an ADR: context, drivers, options table, decision, consequences. The format has settled across four projects |
+| `check-before-commit` | Run `bank_validate` and explain every error |
 
-## 7. Стек
+## 7. Stack
 
-| Слой | Выбор | Почему |
+| Layer | Choice | Why |
 |---|---|---|
-| Язык | TypeScript, Node 22 | Официальный SDK, и он же в AgentUpwork и crybot |
-| SDK | `@modelcontextprotocol/sdk` | Официальный |
-| Транспорт | stdio | Сервер локальный, на проект. HTTP добавил бы аутентификацию без выигрыша |
+| Language | TypeScript, Node 22 | The official SDK, and it is also what AgentUpwork and crybot use |
+| SDK | `@modelcontextprotocol/sdk` | Official |
+| Transport | stdio | The server is local, one per project. HTTP would add authentication for no gain |
 | Frontmatter | `gray-matter` | — |
-| Валидация | `zod` | Даёт и рантайм-проверку, и типы; тот же приём, что в AgentUpwork |
-| Поиск | Свой инвертированный индекс в памяти | На сотнях документов SQLite FTS5 — лишняя зависимость |
-| Тесты | `vitest` + банк-фикстура с намеренными нарушениями | Правила валидации без негативных тестов бессмысленны |
+| Validation | `zod` | Gives both runtime checking and types; the same approach as AgentUpwork |
+| Search | An in-memory inverted index of our own | On hundreds of documents, SQLite FTS5 is a dependency for nothing |
+| Tests | `vitest` plus a fixture bank with deliberate violations | Validation rules without negative tests are meaningless |
 
-Запуск:
+Running it:
 
 ```bash
 memorybank-mcp --root /path/to/project/memory_bank
 ```
 
-Один процесс на проект. Конфигурация клиента — обычная запись в `mcpServers`.
+One process per project. Client configuration is an ordinary `mcpServers` entry.
 
-## 8. Чего сервер не делает
+## 8. What the server does not do
 
-Записано, чтобы будущая работа сюда не съехала.
+Written down so that future work does not drift in here.
 
-- **Не редактирует существующие документы.** Правка содержания — работа агента
-  обычными инструментами. Сервер владеет только созданием и регистрацией.
-- **Не хранит состояние между сессиями.** Индекс производен от файлов и в любой
-  момент перестраивается с нуля.
-- **Не эмбеддинги.** Корпус мал, а `purpose` — рукописный сигнал качества выше,
-  чем эмбеддинг прозы. Вернуться к вопросу, если банк перевалит за тысячу
-  документов и `bank_route` начнёт мазать.
-- **Не мультипроектный.** Один корень на процесс. Кросс-проектный поиск — отдельная
-  задача с другими требованиями.
-- **Не заменяет git.** История, авторство и откат остаются за git.
+- **It does not edit existing documents.** Editing content is the agent's job with its
+  ordinary tools. The server owns creation and registration only.
+- **It keeps no state between sessions.** The index is derived from the files and can be
+  rebuilt from scratch at any moment.
+- **No embeddings.** The corpus is small, and `purpose` is a hand-written signal of
+  higher quality than an embedding of prose. Revisit if a bank passes a thousand
+  documents and `bank_route` starts missing.
+- **Not multi-project.** One root per process. Cross-project search is a separate problem
+  with different requirements.
+- **It does not replace git.** History, authorship and rollback stay with git.
 
-## 9. Этапы
+## 9. Stages
 
-| Этап | Содержание | Признак готовности |
+| Stage | Contents | Readiness signal |
 |---|---|---|
-| **E1** | Индекс, `bank_route`, `bank_read`, ресурс `memorybank://index` | Агент отвечает на вопрос по банку AgentUpwork, не читая `README.md` |
-| **E2** | `bank_validate`, `bank_owner`, ресурс `health` | Прогон по четырём боевым банкам находит хотя бы одно настоящее нарушение |
-| **E3** | `bank_graph`, `bank_search`, `bank_changed` | «Что сломается, если поменять этот порог» отвечается одним вызовом |
-| **E4** | `bank_create`, шаблоны, промпты | Новый ADR создаётся и регистрируется без ручных шагов |
+| **E1** | Index, `bank_route`, `bank_read`, the `memorybank://index` resource | The agent answers a question about the AgentUpwork bank without reading `README.md` |
+| **E2** | `bank_validate`, `bank_owner`, the `health` resource | A run across the four live banks finds at least one genuine violation |
+| **E3** | `bank_graph`, `bank_search`, `bank_changed` | "What breaks if I change this threshold" is answered in one call |
+| **E4** | `bank_create`, templates, prompts | A new ADR is created and registered with no manual steps |
 
-E1 и E2 самодостаточны — если дальше не пойдёт, польза уже есть.
+E1 and E2 are self-sufficient — if it goes no further, the value is already there.
 
-## 10. Открытые вопросы
+## 10. Open questions
 
-1. **`canonical_for` заполнен не везде.** В боевых банках поле есть у части
-   документов. `bank_owner` без него бесполезен, значит E2 упирается в разметку
-   существующих документов. Оценить объём до начала.
-2. **`registeredIn` определяется парсингом markdown-ссылок в индексах.** Ссылка в
-   таблице и ссылка в списке выглядят по-разному; надо либо покрыть оба варианта,
-   либо договориться о формате.
-3. **`stale-draft` требует даты.** В схеме frontmatter даты нет — брать из git или
-   добавить поле.
-4. **Стоит ли публиковать.** Сервер не содержит ничего проектного и решает задачу,
-   которая есть не только у автора. Кандидат в публичный репозиторий — см. вопрос
-   о наполнении GitHub.
+1. **`canonical_for` is not filled in everywhere.** In the live banks the field is
+   present on some documents only. `bank_owner` is useless without it, so E2 runs into
+   annotating existing documents. Size that up before starting.
+2. **`registeredIn` is determined by parsing markdown links in indexes.** A link in a
+   table and a link in a list look different; either cover both forms or agree on one.
+3. **`stale-draft` needs a date.** The frontmatter schema has no date — take it from git
+   or add a field.
+4. **Whether to publish.** The server contains nothing project-specific and solves a
+   problem that is not only the author's. A candidate for a public repository — see the
+   question about filling out GitHub.

@@ -1,6 +1,13 @@
 /**
- * Acceptance criteria from implementation-plan.md, run against the real banks.
- * Skipped automatically when those banks are not on this machine.
+ * Acceptance criteria from implementation-plan.md, measured against the real corpus.
+ *
+ * This suite reads banks that live outside the repository, so it is opt-in: point
+ * `MEMORYBANK_TEST_ROOTS` at the directory holding them. With the variable unset the suite skips,
+ * which is why it must never be the only thing standing behind a green build — the suite that runs
+ * everywhere is `acceptance-generated.test.ts`, which builds its bank with the current code.
+ *
+ * With the variable set but the banks missing the suite fails rather than skipping: a typo in a
+ * path should not read as a pass.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import fs from 'node:fs'
@@ -16,11 +23,19 @@ import { SearchIndex, search } from '../src/search.js'
 import { changed } from '../src/changed.js'
 import { create } from '../src/create.js'
 
-const ROOTS = process.env['MEMORYBANK_TEST_ROOTS'] ?? '/Users/admin/Documents/docs/__projects'
+const ROOTS = process.env['MEMORYBANK_TEST_ROOTS']
 const AGENT_UPWORK = `${ROOTS}/__my/agents/AgentUpwork/memory_bank`
 const SHOWMOJO = `${ROOTS}/showmojo/MainProject/backend/memory_bank`
 
-const have = (p: string) => fs.existsSync(p)
+const have = (p: string) => ROOTS !== undefined && fs.existsSync(p)
+
+describe.skipIf(!ROOTS)('MEMORYBANK_TEST_ROOTS', () => {
+  it('points at the corpus it claims to point at', () => {
+    for (const bankPath of [AGENT_UPWORK, SHOWMOJO]) {
+      expect(fs.existsSync(bankPath), `${bankPath} is missing; check MEMORYBANK_TEST_ROOTS`).toBe(true)
+    }
+  })
+})
 
 describe.skipIf(!have(AGENT_UPWORK))('E0/E1 — AgentUpwork (95 docs, knowledge-heavy)', () => {
   let bank: Bank
@@ -40,10 +55,8 @@ describe.skipIf(!have(AGENT_UPWORK))('E0/E1 — AgentUpwork (95 docs, knowledge-
     expect([...bank.contract.roots]).toEqual(['dna/principles.md'])
   })
 
-  it('keeps every document, including the one with invalid YAML', () => {
-    const broken = bank.all().filter((d) => d.parseError)
-    expect(broken.map((d) => d.path)).toEqual(['flows/templates/feature/design.md'])
-    expect(broken[0]!.docKind).toBe('feature')
+  it('parses every document — the 22 unquoted-colon defects in the corpus are fixed', () => {
+    expect(bank.all().filter((d) => d.parseError)).toEqual([])
   })
 
   const CONTROL: [string, string][] = [
@@ -72,10 +85,10 @@ describe.skipIf(!have(AGENT_UPWORK))('E0/E1 — AgentUpwork (95 docs, knowledge-
     }
   })
 
-  it('resolves the known broken edge in the governance document', () => {
+  it('has no unresolvable upstream left in the governance document', () => {
     const flow = bank.get('flows/feature-flow.md')!
-    const broken = flow.derivedFrom.filter((e) => !e.external && e.resolved && !bank.docs.has(e.resolved))
-    expect(broken.map((e) => e.raw)).toEqual(['../engineering/developer-docs-commands-safety.md'])
+    expect(flow.derivedFrom.filter((e) => !e.external && e.resolved && !bank.docs.has(e.resolved))).toEqual([])
+    expect(flow.derivedFrom.length).toBeGreaterThan(0)
   })
 
   it('reports both known defects of this bank and nothing else at error severity', async () => {
@@ -83,19 +96,18 @@ describe.skipIf(!have(AGENT_UPWORK))('E0/E1 — AgentUpwork (95 docs, knowledge-
     const byRule = new Map<string, string[]>()
     for (const f of errors) byRule.set(f.rule, [...(byRule.get(f.rule) ?? []), f.path])
 
-    expect(byRule.get('broken-derived-from')).toEqual(['flows/feature-flow.md'])
     expect(byRule.get('ssot-conflict')).toEqual(['flows/workflows.md'])
-    expect(byRule.get('invalid-frontmatter')).toEqual(['flows/templates/feature/design.md'])
+    expect(byRule.get('broken-derived-from')).toBeUndefined()
     expect(byRule.get('cycle-in-derived-from')?.length).toBe(4)
+    expect(byRule.get('invalid-frontmatter')).toBeUndefined()
     expect(byRule.get('dangling-index-entry')).toBeUndefined()
     expect(byRule.get('must-not-define-violated')).toBeUndefined()
   })
 
-  it('reports the gate that points at a rule document which does not resolve', async () => {
-    const refs = await validate(bank, { rule: 'unresolved-rule-reference' })
-    expect(refs.map((f) => f.path)).toEqual(['flows/feature-flow.md', 'flows/feature-flow.md'])
-    expect(refs[0]!.message).toContain('simplify review')
-    expect(refs[0]!.message).toContain('Did you mean engineering/testing-policy.md?')
+  it('no longer reports the closure gate: the path is fixed and the rule now exists', async () => {
+    expect(await validate(bank, { rule: 'unresolved-rule-reference' })).toEqual([])
+    const policy = bank.raw('engineering/testing-policy.md')!
+    expect(policy).toContain('## Simplify Review')
   })
 
   it('answers "I change this threshold, what else do I touch" in one call', () => {
@@ -113,9 +125,9 @@ describe.skipIf(!have(AGENT_UPWORK))('E0/E1 — AgentUpwork (95 docs, knowledge-
     expect(down.byLayer).toMatchObject({ knowledge: 3, decision: 2, delivery: 3 })
   })
 
-  it('surfaces the broken edge while walking up, without failing the walk', () => {
+  it('walks up the governance document with every edge resolving', () => {
     const up = graph(bank, 'flows/feature-flow.md', { direction: 'up', depth: 1 })
-    expect(up.broken.map((e) => e.raw)).toEqual(['../engineering/developer-docs-commands-safety.md'])
+    expect(up.broken).toEqual([])
     expect(up.nodes.length).toBeGreaterThan(1)
   })
 

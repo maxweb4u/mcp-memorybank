@@ -10,6 +10,7 @@ import { graph } from './graph.js'
 import { SearchIndex, search } from './search.js'
 import { changed } from './changed.js'
 import { create, inbox, promote } from './create.js'
+import { init } from './init.js'
 
 const LAYERS = ['dna', 'knowledge', 'decision', 'delivery', 'flow', 'other'] as const
 
@@ -81,6 +82,33 @@ export async function startServer(bank: Bank): Promise<void> {
       await bank.refresh()
       try {
         return json(await read(bank, docPath, section))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  server.registerTool(
+    'bank_init',
+    {
+      title: 'Create a bank where there is none',
+      description:
+        'Seeds an empty root with the fourteen-directory skeleton, the governance set (dna/), the flows and ' +
+        'templates, one registered index per section, and draft stubs for the two documents the flow refers ' +
+        'to. Everything written becomes the bank\'s own — the starter is a starting point, not a schema the ' +
+        'server keeps enforcing. A bank created this way validates clean; refuses to seed over existing ' +
+        'documents unless force is passed.',
+      inputSchema: {
+        name: z.string().min(1).describe('Project name, used in the root index'),
+        dryRun: z.boolean().optional().describe('List what would be written without writing it'),
+        force: z.boolean().optional().describe('Seed even though the directory already holds documents'),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: false },
+    },
+    async ({ name, dryRun, force }) => {
+      await bank.refresh()
+      try {
+        return json(await init(bank, { name, dryRun, force }))
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }

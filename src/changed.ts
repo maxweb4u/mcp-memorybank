@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import type { Bank } from './bank.js'
@@ -59,13 +60,18 @@ function enrich(bank: Bank, rel: string, changeKind: ChangeKind, from?: string):
 const STATUS: Record<string, ChangeKind> = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed' }
 
 async function fromGit(bank: Bank, since: string, repo: string): Promise<ChangedResult> {
+  // git reports paths against the resolved repository root. Comparing those to an unresolved
+  // bank root makes every file look like it sits outside the bank, and the delta comes back empty
+  // rather than failing — so resolve both ends before subtracting them.
+  const base = await fs.realpath(bank.root).catch(() => bank.root)
+
   const rel = (abs: string): string | null => {
-    const r = path.relative(bank.root, path.join(repo, abs)).split(path.sep).join('/')
+    const r = path.relative(base, path.join(repo, abs)).split(path.sep).join('/')
     if (r.startsWith('..') || !r.endsWith('.md')) return null
     return r
   }
 
-  const diff = await git(repo, ['diff', '--name-status', '-M', since, '--', bank.root])
+  const diff = await git(repo, ['diff', '--name-status', '-M', since, '--', base])
   const changes: Change[] = []
   const seen = new Set<string>()
 
@@ -92,7 +98,7 @@ async function fromGit(bank: Bank, since: string, repo: string): Promise<Changed
   }
 
   // `git diff` never lists files that were created but not yet committed or staged.
-  const untracked = await git(repo, ['ls-files', '--others', '--exclude-standard', '--', bank.root])
+  const untracked = await git(repo, ['ls-files', '--others', '--exclude-standard', '--', base])
   for (const line of untracked.split('\n')) {
     if (!line.trim()) continue
     const target = rel(line)

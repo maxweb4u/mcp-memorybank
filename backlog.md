@@ -1,150 +1,245 @@
 ---
-title: "memorybank-mcp — бэклог"
+title: "memorybank-mcp — backlog"
 doc_kind: project
 doc_function: canonical
-purpose: "Что осталось сделать после закрытия плана реализации: внедрение в банки, необязательные доработки сервера, подготовка к публикации."
+purpose: "What is left after the implementation plan closed: rollout into the banks, optional server work, preparation for publishing."
 derived_from:
   - implementation-plan.md
 status: active
 audience: humans_and_agents
 ---
 
-# Бэклог
+# Backlog
 
-План реализации закрыт: [implementation-plan.md](implementation-plan.md), E0…E5 плюс карантин.
-Здесь то, что осталось за его границами.
+The implementation plan is closed: [implementation-plan.md](implementation-plan.md), E0…E5 plus the
+quarantine. This is what fell outside it.
 
-Не входит сюда: исправление 321 находки валидатора по девятнадцати банкам — это отдельная
-работа, идёт прямо сейчас.
+Not included here: fixing the 321 validator findings across nineteen banks — that is separate work,
+and it is on hold until the field test is done.
 
-## A. Внедрение — работа в банках, а не в этом репозитории
+## A. Rollout — work in the banks, not in this repository
 
-Договорено при разборе спецификации и сравнении с bulletproof, но не выполнено.
+Agreed while going through the specification and comparing against bulletproof, but not carried out.
 
-### A-01. karpathy-guidelines в глобальный CLAUDE.md
+### A-01. karpathy-guidelines into the global CLAUDE.md
 
-Скопировать `CLAUDE.md` из `multica-ai/andrej-karpathy-skills` в `~/.claude/CLAUDE.md`
-(или подключить как skill). Четыре поведенческих правила: не усложнять, не трогать соседний код,
-называть допущения, формулировать проверяемый критерий готовности.
+Copy `CLAUDE.md` from `multica-ai/andrej-karpathy-skills` into `~/.claude/CLAUDE.md` (or wire it in
+as a skill). Four behavioural rules: do not over-engineer, do not touch neighbouring code, name your
+assumptions, state a checkable definition of done.
 
-Соединять не с чем: ни артефактов, ни состояния, ни точек стыковки с сервером. Это фон.
+There is nothing to integrate: no artifacts, no state, no seams with the server. It is background.
 
-**Готово когда:** правила в CLAUDE.md, десять минут работы.
+**Done when:** the rules are in CLAUDE.md. Ten minutes of work.
 
-### A-02. Четыре дописки в `flows/feature-flow.md`
+### A-02. Four additions to `flows/feature-flow.md`
 
-Из сравнения с bulletproof: из двенадцати его стадий восемь уже покрыты твоим flow, и в шести он
-строже. Реально нового — четыре пункта.
+From the comparison with bulletproof: of its twelve stages, eight are already covered by your flow,
+and on six of them your flow is stricter. Genuinely new — four items.
 
-| Что | Куда | Почему |
+| What | Where | Why |
 |---|---|---|
-| Research-вывод: кто уже решал задачу и почему выбран этот подход | предикат гейта `Draft Feature → Problem Ready` | единственная стадия bulletproof, которой нет ни в каком виде; grounding есть, но только про свою кодовую базу и только на пути `Plan required: yes` |
-| Минимум два `ALT-*`, отклонённые с причиной | тот же гейт, независимо от Design Requirement | сейчас альтернативы обязаны появиться только при `Design required: yes`; для compact- и no-plan-фичи никто не спрашивает, есть ли решение лучше |
-| «Баг без воспроизведения — не баг; правки ради красоты запрещены» | `engineering/testing-policy.md` | прямое продолжение принципа `NS-*`, только на уровне кода |
-| Anti-rationalization Stop-хук | `.claude/settings.json` проекта | не документ; блокирует завершение при «pre-existing issue», «out of scope», «follow-up» |
+| A research finding: who has solved this before, and why this approach was chosen | the `Draft Feature → Problem Ready` gate predicate | the one bulletproof stage that has no counterpart at all; grounding exists, but only about your own codebase and only on the `Plan required: yes` path |
+| At least two `ALT-*`, rejected with a reason | the same gate, regardless of the Design Requirement | today alternatives are only required when `Design required: yes`; for a compact or no-plan feature nobody asks whether a better solution exists |
+| "A bug without a reproduction is not a bug; cosmetic edits are forbidden" | `engineering/testing-policy.md` | a direct continuation of the `NS-*` principle, one level down at the code |
+| An anti-rationalization Stop hook | the project's `.claude/settings.json` | not a document; blocks completion on "pre-existing issue", "out of scope", "follow-up" |
 
-Три из четырёх после дописки становятся проверяемыми предикатами, то есть попадают в `bank_create`
-автоматически как часть гейта.
+Three of the four become checkable predicates once written down, which means `bank_create` picks
+them up automatically as part of the gate.
 
-**Готово когда:** `feature-flow.md` и `testing-policy.md` обновлены в одном банке-образце, хук в
-settings; остальные банки подтягиваются отдельно.
+**Done when:** `feature-flow.md` and `testing-policy.md` are updated in one reference bank and the
+hook is in settings; the other banks follow separately.
 
-### A-03. Определить simplify review или убрать предикат
+### A-03. Define the simplify review, or drop the predicate — **done**
 
-Гейт `Done` в `feature-flow.md` (строка 352) требует «the separate simplify review defined by
-`testing-policy.md` is complete and its verdict is recorded». В `testing-policy.md` слова *simplify*
-нет вообще — обязательное условие закрытия фичи опирается на несуществующее правило.
+The `Done` gate in `feature-flow.md` (line 352) requires that "the separate simplify review defined
+by `testing-policy.md` is complete and its verdict is recorded". The word *simplify* does not appear
+in `testing-policy.md` at all — a mandatory condition for closing a feature rests on a rule that does
+not exist.
 
-Ровно это ловит `unresolved-rule-reference`, и находит в **пяти банках** — `feature-flow.md`
-разошёлся по проектам вместе с ошибкой.
+That is exactly what `unresolved-rule-reference` catches, and it finds it in **five banks** —
+`feature-flow.md` spread across the projects together with the error.
 
-Два выхода: определить правило в `testing-policy.md` или убрать предикат из гейта. Второй вариант
-честнее, если ревью де-факто не делается.
+Two ways out: define the rule in `testing-policy.md`, or drop the predicate from the gate. The second
+is more honest if the review is de facto not happening.
 
-**Готово когда:** `bank_validate --rule unresolved-rule-reference` чист на этом файле во всех пяти
-банках.
+**Done.** The section was ported from showmojo into AgentUpwork and focusreminder (which had no such
+rule); in the other three banks the rule was already there and only the path needed fixing.
+`unresolved-rule-reference` is at 0 across all 19 banks.
 
-### A-04. Подключить сервер к проекту и пожить с ним
+*(Note: these edits were subsequently reverted at the owner's request — nothing in the existing banks
+changes until the field test is done. The finding and the fix stand; applying them is queued behind
+A-04.)*
 
-Сервер ни разу не работал в живой сессии. Пока это не так, мы не знаем, попадает ли `bank_route`
-в то, что нужно в реальной работе, а не в контрольные вопросы из плана.
+### A-04. Connect the server to a project and live with it
 
-Решено делать на новом проекте, а не на существующем банке.
+The server has never run in a live session. Until it has, we do not know whether `bank_route` lands
+on what is actually needed in real work, as opposed to the control questions from the plan.
 
-**Готово когда:** `.mcp.json` в проекте, день работы через сервер, список того, где он промахнулся.
+The test bed is chosen: `__my/modules/ebook_parser` — a new project where the bank has to be built
+from nothing. Detailed plan and criteria — [field-test.md](field-test.md).
 
-### A-05. Проверить, что Stop-хук вообще грузится
+**Done when:** the six numbers from the "What counts as a result" section are collected over a day of
+work.
 
-Логика `hooks/capture-to-inbox.sh` проверена по всем четырём ветвям, схема конфига взята из
-официальной документации, но **фактическая загрузка хука Claude Code не подтверждена**: в
-песочнице разработки регистрировалось 0 хуков и из `.claude/settings.json`, и через `--settings`
-(похоже на недоверенный каталог).
+### A-05. Verify the Stop hook actually loads
 
-**Готово когда:** `/hooks` в интерактивной сессии доверенного проекта показывает хук, и одна
-рабочая сессия действительно оставляет заметку в `_inbox/`.
+The logic of `hooks/capture-to-inbox.sh` has been checked across all four branches and the config
+schema comes from the official documentation, but **Claude Code actually loading the hook is not
+confirmed**: in the development sandbox, 0 hooks registered both from `.claude/settings.json` and via
+`--settings` (which looks like an untrusted directory).
 
-## B. По коду сервера — всё необязательное
+**Done when:** `/hooks` in an interactive session of a trusted project shows the hook, and one real
+session actually leaves a note in `_inbox/`.
 
-Ничто отсюда не блокирует использование.
+## B. Server code — all of it optional
 
-### B-01. `bank_append` — узкая щель для дописывания
+Nothing here blocks use.
 
-Сейчас автозахват создаёт отдельный документ в `_inbox/`. Но большая часть захвата — это одна
-строчка в существующего владельца: новый gotcha в `engineering/gotchas.md`, новый термин в
+### B-01. `bank_append` — a narrow slot for appending
+
+Right now automatic capture creates a separate document in `_inbox/`. But most of what gets captured
+is a single line into an existing owner: a new gotcha in `engineering/gotchas.md`, a new term in
 `domain/glossary.md`.
 
-`bank_append { path, section, content }` — **только добавляет пункт в конец названного раздела**
-документа-владельца, не может переписать ни строки. Риск заметно ниже свободного редактирования,
-покрытие — большинство случаев.
+`bank_append { path, section, content }` — **appends one item to the end of a named section** of the
+owning document, and cannot rewrite a single line. Noticeably lower risk than free editing, and it
+covers most cases.
 
-Решение не принято: это сдвиг границы «сервер не редактирует существующие документы» из §8 спеки.
+Undecided: this moves the "the server does not edit existing documents" boundary from §8 of the spec.
 
-### B-02. Автообновление статусов из git
+### B-02. Updating statuses from git automatically
 
-`delivery_status: done` при merge коммита с `FT-XXX`, план в `status: archived` при закрытии.
-Механическая работа без суждения, но требует связки с PR.
+`delivery_status: done` when a commit mentioning `FT-XXX` merges, a plan moved to `status: archived`
+when it closes. Mechanical work with no judgement involved, but it needs a link to the PR.
 
-Мотив в цифрах: `archived` стоит на **42 документах из 1153** — шаг архивации де-факто не делает
-никто, хотя `feature-flow.md` его предписывает.
+The motive in numbers: `archived` is set on **42 documents out of 1153** — de facto nobody performs
+the archiving step, even though `feature-flow.md` prescribes it.
 
-### B-03. Детектор расхождения кода и документа
+### B-03. A code-versus-document drift detector
 
-Поле-якорь в шапке: «факт `filter_thresholds` живёт в `src/filter/config.ts`». Дальше сервер
-показывает подозрительные пары: код тронули, документ-владелец не трогали три месяца.
+An anchor field in the header: "the fact `filter_thresholds` lives in `src/filter/config.ts`". The
+server then surfaces suspicious pairs: the code was touched, the owning document has not been touched
+in three months.
 
-Ничего не сочиняет, только показывает. По пользе, на мой взгляд, это самое ценное из списка B:
-главная беда базы знаний не в том, что чего-то не записали, а в том, что записанное тихо устарело.
-Требует разметки якорей.
+It invents nothing, it only shows. On usefulness this is, in my view, the most valuable item in list
+B: the main failure of a knowledge base is not that something went unwritten, but that what was
+written went quietly stale. Requires the anchors to be annotated.
 
-### B-04. Синхронизация `dna/` между банками
+### B-04. Syncing `dna/` between banks
 
-Контракт в `dna/frontmatter.md` совпадает байт в байт только в пяти банках из четырнадцати, где
-`dna/` вообще есть. Сервер мог бы показывать дифф: «governance в AgentUpwork новее, чем в boxglb
-на три месяца». Не переносить молча — показывать.
+The contract in `dna/frontmatter.md` matches byte for byte in only five of the fourteen banks that
+have a `dna/` at all. The server could show the diff: "governance in AgentUpwork is three months
+newer than in boxglb". Not migrate silently — show.
 
-### B-05. Русские запросы к `bank_route`
+### B-05. Russian-language queries to `bank_route` — **done**
 
-Банки на английском, ранжирование идёт по английским токенам. В сессии агент задаёт вопрос
-по-английски сам, но при ручном вызове это надо помнить. Возможный шаг — маленький словарь
-соответствий для самых частых терминов, но выгода сомнительная.
+The banks are in English and ranking ran on English tokens, so a hand-typed Russian question returned
+nothing at all — not a bad answer, an empty one.
 
-## C. Публикация
+**Done.** `src/lang.ts` carries a domain dictionary keyed by Russian stem prefixes, built from the
+most frequent terms in `title` / `purpose` / `canonical_for` across the corpus. Both `bank_route` and
+`bank_search` expand a query word into its equivalents in the other language and score the concept
+once, so width cannot beat a literal match; a translation is discounted so the word actually typed
+wins a tie. A verbal prefix is stripped only when what remains lands on a known stem, which is what
+carries `задеплоить` to `deployment`.
 
-Цель — mcpservers.org.
+The doubt in the original entry was about payoff, and the measurement settled it: on AgentUpwork all
+five Russian control questions now return the same first document as their English counterparts,
+where before they returned nothing.
 
-### C-01. Заполнить правообладателя и поля пакета
+Two things came out of it that were not the point. `searchTokens` treated Cyrillic as a separator, so
+any Russian text quoted in a document was silently absent from the search index — fixed. And field
+scoring now works per concept rather than per token, which also removes double counting when a query
+repeats a word in two forms.
 
-- `LICENSE` — заменить `ЗАПОЛНИТЬ-ИМЯ-ПРАВООБЛАДАТЕЛЯ` на имя или ник.
-- `package.json` — пустые `author`, `repository.url`, `homepage`.
+### B-07. `bank_init` — creating a bank from nothing — **done**
 
-### C-02. Что нужно каталогу
+The server could not stand a bank up on an empty directory, and [field-test.md](field-test.md) used
+to begin by copying `dna/` and `flows/` out of someone else's bank. That was not a principle, it was
+a hole.
 
-Публичный репозиторий, README с инструкцией подключения, LICENSE, рабочий `bin`. Первые три есть.
-Проверить `npm pack` перед подачей: в архив должны попасть только `dist`, `hooks`, `README.md`,
-`LICENSE`.
+The cause was circular: `bank_create` takes the contract from `dna/` and the templates from
+`flows/templates/` — that is, from a bank that does not exist yet. The decision "the server enforces
+the bank's rules, not its own" is right for validation, but it has nothing to do with seeding: the
+starter set becomes the bank's property immediately, and the first commit can rewrite it.
 
-### C-03. Убрать привязку к машине автора
+What `bank_init { root, name }` had to do: lay out the 14-directory skeleton, drop in `dna/` (7
+documents) and `flows/` with the templates, generate a `README.md` for every section and the root
+index. After that the bank lives on its own.
 
-`test/acceptance.test.ts` по умолчанию смотрит в `/Users/admin/Documents/docs/__projects`. Тесты
-корректно пропускаются, если банков нет, но в публичном репозитории путь стоит вынести целиком в
-`MEMORYBANK_TEST_ROOTS` без такого дефолта.
+The starter set was not to be invented: `dna/frontmatter.md` matches byte for byte across five banks
+— that is already a de facto template, just not packaged.
+
+Why this matters more than it looks: copying from AgentUpwork **would have spread into a sixth bank**
+the `feature-flow.md` defect we are fixing in five. Seeding from a versioned set does not do that.
+
+**Done.** The starter set is in `starter/`, the tool is `bank_init`, the CLI flag is `--init`. A fresh
+bank is 50 files and validates with zero findings. Along the way, three defects inherited from the
+donor were found and fixed in the set: the broken edge to `developer-docs-commands-safety.md`, the
+reference to a nonexistent `testing-policy.md`, and the `doc_kind`/`doc_function` tables in
+governance lagging behind what the set itself uses (`process`, `prompt`, `epic`, `feature-support`
+and `reference` were not declared).
+
+### B-06. Graph traversal across the bank boundary
+
+The "not multi-project" decision from §8 of the spec stays right for indexing and validation, but it
+has a cost that is only visible now: **`bank_graph` stops at the bank boundary**, and in the nested
+banks of a monorepo the answer to "what breaks" is knowingly incomplete. There are 35 external edges:
+Passix 17, readtolearn 15, Seros 1. Passix has three nested banks, and the links between them are
+real.
+
+A full multi-root is not needed. The cheap intermediate step: resolve an external edge into the
+neighbouring bank **for graph traversal only** — read the target file's header, without indexing or
+validating it. One directory up, one read.
+
+On usefulness this ranks above B-04 and B-05.
+
+## C. Publishing
+
+Target — mcpservers.org.
+
+### C-01. Fill in the copyright holder and the package fields
+
+- `LICENSE` — replace `FILL-IN-COPYRIGHT-HOLDER` with a name or handle.
+- `package.json` — empty `author`, `repository.url`, `homepage`.
+
+### C-02. What the catalogue needs
+
+A public repository, a README with wiring instructions, a LICENSE, a working `bin`. The first three
+exist. Check `npm pack` before submitting: the archive should contain only `dist`, `hooks`,
+`README.md`, `LICENSE`.
+
+### C-03. Remove the tie to the author's machine — **done**
+
+`test/acceptance.test.ts` looked in `/Users/admin/Documents/docs/__projects` by default. The tests
+skipped correctly when the banks were absent, but that is exactly the problem: in a public
+repository, and in CI, the whole acceptance tier skipped and the build went green having verified
+nothing.
+
+**Done.** The default is gone; the corpus suite reads `MEMORYBANK_TEST_ROOTS` and skips when it is
+unset, but **fails** when it is set and the banks are missing — a typo in a path should not read as
+a pass. `npm run test:corpus` runs that tier on its own.
+
+The tier that has to stay green is now `test/acceptance-generated.test.ts`: it seeds a bank with the
+current `bank_init`, fills it through `bank_create` only, and runs the same readiness criteria
+against what this build actually produces. It needs nothing but a temp directory and git.
+
+That change paid for itself immediately — see the `bank_changed` defect recorded under E4 in
+[implementation-plan.md](implementation-plan.md), which no test against the real banks could have
+found.
+
+## D. Revisited "deliberately not doing this" decisions
+
+All five were taken before implementation. Below is what the measurements showed, and the condition
+under which each decision changes. The condition matters more than the verdict: without one, "no"
+turns into "never".
+
+| Decision | Verdict | Revisit when |
+|---|---|---|
+| `bank_owner` as a separate tool | **no**, and more confidently than before | `canonical_for` passes 70% in some bank, or conflicts pass a dozen. Today: 29% and one conflict across 1153 documents |
+| Embeddings | **no**, but the criterion changed | Not "a thousand documents" (the maximum is 368, the counter is useless) but misses on a control set: the right document regularly outside the top 3. Lexical works because `purpose` is filled on 1147 of 1149 — a signal an embedding would not have |
+| Multi-root | **partly revisited** → B-06 | Indexing and validating several banks is not needed; traversing the graph across the boundary is |
+| Editing existing documents | **no** for full editing | The real decision is B-01 (`bank_append`), and it needs making: the shape of automatic capture depends on it |
+| A watcher | **no**, and there is no revisit condition | Measured on the largest bank: a cold build of 368 documents is 199 ms, an empty `refresh` before every call is 11–13 ms. A watcher would add state and an error class of "the index diverged from disk" to save ten milliseconds |
+
+Of the five, two are worth touching: B-06 and the B-01 decision. Three are confirmed by numbers.

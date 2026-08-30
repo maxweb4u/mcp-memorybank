@@ -1,345 +1,359 @@
 ---
-title: "MCP-сервер поверх memory_bank — план реализации"
+title: "An MCP server over memory_bank — implementation plan"
 doc_kind: feature
 doc_function: canonical
-purpose: "План реализации memorybank-mcp: порядок этапов, состав каждого, критерии готовности, устройство индекса и ранжирования."
+purpose: "Implementation plan for memorybank-mcp: the order of stages, what each contains, readiness criteria, and how the index and ranking are built."
 derived_from:
   - specification.md
 status: active
 audience: humans_and_agents
 ---
 
-# План реализации memorybank-mcp
+# memorybank-mcp implementation plan
 
-Производный документ от [specification.md](specification.md). Спека отвечает на «что и зачем»,
-этот план — на «что за чем и как проверить, что заработало».
+Derived from [specification.md](specification.md). The spec answers "what and why"; this plan
+answers "in what order, and how do we know it works".
 
-Все числа ниже — результат замеров по 19 реальным банкам (1153 документа, 8 МБ), а не оценки.
+Every number below is a measurement across 19 real banks (1153 documents, 8 MB), not an estimate.
 
-## 0. Три решения, которые меняют спеку
+## 0. Three decisions that change the spec
 
-Прежде чем план — три развилки, разрешённые замерами. Всё остальное следует из них.
+Before the plan, three forks the measurements settled. Everything else follows from them.
 
-**Схему читаем из банка, а не хардкодим.** В каждом зрелом банке лежит `dna/frontmatter.md`
-(контракт полей) и `dna/governance.md` (правила SSoT). В пяти банках `frontmatter.md` совпадает
-байт в байт. Сервер обязан читать контракт оттуда: `doc_kind`, `doc_function` и `status` — открытые
-множества с предупреждением на незнакомое значение, а не `zod`-enum. Жёсткий enum из спеки отверг бы
-101 документ по `doc_kind` и 215 по `doc_function`.
+**Read the schema from the bank, do not hardcode it.** Every mature bank carries a
+`dna/frontmatter.md` (the field contract) and a `dna/governance.md` (the SSoT rules). In five banks
+`frontmatter.md` matches byte for byte. The server has to read the contract from there: `doc_kind`,
+`doc_function` and `status` are open sets with a warning on an unknown value, not a `zod` enum. The
+hard enum from the spec would have rejected 101 documents by `doc_kind` and 215 by `doc_function`.
 
-**У документа есть слой, и он важнее для ранжирования, чем текст.** Слой выводится из первой
-директории пути. В AgentUpwork журнал доставки — 7% банка, в showmojo/backend — 80%. Без веса по слою
-`bank_route` на большом банке будет систематически попадать в закрытые фичи вместо знания.
+**A document has a layer, and for ranking it matters more than the text.** The layer is derived from
+the first directory in the path. In AgentUpwork the delivery journal is 7% of the bank; in
+showmojo/backend it is 80%. Without a layer weight, `bank_route` on a large bank will systematically
+land on closed features instead of knowledge.
 
-**Кросс-банковые рёбра — норма, а не ошибка.** 35 рёбер `derived_from` уходят за корень банка
-(Passix — 17, readtolearn/backend — 10, website — 5). Это вложенные банки моно-репо. Сервер помечает
-такое ребро как `external` и не считает битым.
+**Cross-bank edges are normal, not an error.** 35 `derived_from` edges leave the bank root (Passix —
+17, readtolearn/backend — 10, website — 5). Those are nested banks in a monorepo. The server marks
+such an edge `external` and does not count it as broken.
 
-## 1. Как это работает — механика
+## 1. How it works — the mechanics
 
-### Индекс
+### The index
 
-При старте — обход `<root>/**/*.md`, парсинг frontmatter, построение производных структур.
-8 МБ и 1153 документа читаются за сотни миллисекунд, поэтому никакого watcher и никакого SQLite.
+At startup: walk `<root>/**/*.md`, parse frontmatter, build the derived structures. 8 MB and 1153
+documents read in hundreds of milliseconds, so no watcher and no SQLite.
 
 ```ts
 type Layer = 'dna' | 'knowledge' | 'decision' | 'delivery' | 'flow' | 'other'
 
 interface Edge {
-  raw: string           // как записано в документе
-  fit?: string          // объектная форма { path, fit } — 13 документов в корпусе
-  resolved: string|null // резолв ОТНОСИТЕЛЬНО ДИРЕКТОРИИ ДОКУМЕНТА, не корня банка
-  external: boolean     // указывает за пределы корня
+  raw: string           // as written in the document
+  fit?: string          // the object form { path, fit } — 13 documents in the corpus
+  resolved: string|null // resolved RELATIVE TO THE DOCUMENT'S DIRECTORY, not the bank root
+  external: boolean     // points outside the root
 }
 
 interface BankDoc {
-  path: string          // POSIX, относительно корня банка
-  title: string         // frontmatter → первый H1 → basename (в корпусе title есть у 74%)
-  docKind: string       // строка, не enum
+  path: string          // POSIX, relative to the bank root
+  title: string         // frontmatter → first H1 → basename (74% of the corpus has a title)
+  docKind: string       // a string, not an enum
   docFunction: string
   purpose: string
   status: string
-  layer: Layer          // вычисляется из пути
+  layer: Layer          // computed from the path
   derivedFrom: Edge[]
   canonicalFor: string[]
   mustNotDefine: string[]
   deliveryStatus?: string
   decisionStatus?: string
-  sections: { title: string; line: number }[]  // H2, для точечного чтения
+  sections: { title: string; line: number }[]  // H2, for section-scoped reads
   registeredIn: string[]
   mtime: number
   bytes: number
 }
 ```
 
-Отображение директории в слой:
+Directory-to-layer mapping:
 
-| Директория | Layer | Смысл |
+| Directory | Layer | Meaning |
 |---|---|---|
-| `dna/` | `dna` | конституция банка |
-| `product/ domain/ engineering/ ops/ system/ services/` | `knowledge` | живёт годами |
-| `adr/ use-cases/ prd/` | `decision` | решения и сценарии |
-| `features/ epics/ tasks/` | `delivery` | журнал доставки |
-| `flows/ processes/ prompts/` | `flow` | как производятся документы |
+| `dna/` | `dna` | the bank's constitution |
+| `product/ domain/ engineering/ ops/ system/ services/` | `knowledge` | lives for years |
+| `adr/ use-cases/ prd/` | `decision` | decisions and scenarios |
+| `features/ epics/ tasks/` | `delivery` | the delivery journal |
+| `flows/ processes/ prompts/` | `flow` | how documents get produced |
 
-**Инвалидация.** На каждом вызове — `stat()` по всем путям. Переиндексируются только файлы
-с изменившимся `mtime`. Появление и исчезновение файлов ловится сравнением множества путей.
+**Invalidation.** On every call, `stat()` across all paths. Only files whose `mtime` changed are
+re-indexed. Files appearing and disappearing are caught by comparing the path sets.
 
-**Degraded mode.** Если `dna/` в банке нет (5 банков из 19 — Passix/frontend, Passix/backend,
-readtolearn/website, showmojo/MainProject, Seros), сервер поднимается с `bank_route`, `bank_read`
-и `bank_search`, а `bank_validate` возвращает единственное предупреждение «контракт не найден».
+**Degraded mode.** If the bank has no `dna/` (5 banks out of 19 — Passix/frontend, Passix/backend,
+readtolearn/website, showmojo/MainProject, Seros), the server comes up with `bank_route`,
+`bank_read` and `bank_search`, and `bank_validate` returns a single warning: contract not found.
 
-### Ранжирование `bank_route`
+### `bank_route` ranking
 
-Вопрос токенизируется, каждый документ получает балл:
+The question is tokenized, and every document is scored:
 
 ```
-score = Σ (совпадение × вес поля) × множитель слоя × множитель статуса
+score = Σ (match × field weight) × layer multiplier × status multiplier
 ```
 
-| Поле | Вес | Почему |
+| Field | Weight | Why |
 |---|---|---|
-| `canonical_for` | 5 | прямое объявление владения фактом |
-| `purpose` | 3 | написан руками как подсказка для навигации |
-| `title` | 2 | есть у 74% документов |
-| заголовки H2 | 1 | ловят точечный раздел |
+| `canonical_for` | 5 | a direct declaration of owning the fact |
+| `purpose` | 3 | written by hand as a navigation hint |
+| `title` | 2 | present on 74% of documents |
+| H2 headings | 1 | catch the specific section |
 
-| Множитель | Значение |
+| Multiplier | Value |
 |---|---|
 | `layer: knowledge` | ×1.5 |
 | `layer: decision` | ×1.2 |
 | `layer: dna`, `flow`, `other` | ×1.0 |
 | `layer: delivery` | ×0.6 |
 | `status: active` | ×1.0 |
-| `status: active` | ×0.7 |
+| `status: draft` | ×0.7 |
 | `status: archived` | ×0.2 |
-| `delivery_status: done` или `cancelled` | ×0.5 |
+| `delivery_status: done` or `cancelled` | ×0.5 |
 
-**Жёсткий фильтр:** `doc_function: template` не попадает в выдачу никогда — это 123 документа
-вроде `ADR-ID.md`, которые иначе забьют топ.
+**Hard filter:** `doc_function: template` never appears in results — that is 123 documents like
+`ADR-ID.md` which would otherwise flood the top.
 
-Тело документа в ранжирование не входит — для прозы есть `bank_search`.
+The document body plays no part in ranking — prose is what `bank_search` is for.
 
-Каждый результат несёт поле `why` («совпало `canonical_for: filter_thresholds`»), иначе агент
-не отличит точное попадание от случайного.
+Every result carries a `why` field ("matched `canonical_for: filter_thresholds`"), otherwise the
+agent cannot tell an exact hit from an accidental one.
 
-## 2. Этапы
+## 2. Stages
 
-Порядок обоснован зависимостями, а не удобством: валидация идёт перед графом, потому что
-чинит те самые 43 битых ребра, по которым потом ходит граф.
+The order follows dependencies, not convenience: validation comes before the graph because it fixes
+the very broken edges the graph then walks.
 
-### E0 — Каркас индекса (~0.5 дня)
+### E0 — Index skeleton (~0.5 day)
 
-Обход, парсинг frontmatter (`gray-matter`), **обе формы `derived_from`** — плоская строка
-и объект `{ path, fit }`, резолв относительно директории документа, вычисление слоя,
-чтение контракта из `dna/`.
+The walk, frontmatter parsing (`gray-matter`), **both forms of `derived_from`** — a flat string and
+an object `{ path, fit }` — resolution relative to the document's directory, layer computation,
+reading the contract from `dna/`.
 
-CLI: `memorybank-mcp --root <path> --stats` печатает статистику без запуска MCP.
+CLI: `memorybank-mcp --root <path> --stats` prints statistics without starting MCP.
 
-**Готовность:** `--stats` даёт 95 документов на AgentUpwork и 368 на showmojo/backend,
-ноль ошибок парсинга на всех 19 банках, 15 рёбер с `fit` распознаны как объектная форма.
+**Readiness:** `--stats` gives 95 documents on AgentUpwork and 368 on showmojo/backend, zero parse
+errors across all 19 banks, 15 edges with `fit` recognised as the object form.
 
-### E1 — Чтение (~1–2 дня)
+### E1 — Reads (~1–2 days)
 
 - `bank_route { question, limit?, docKind?, layer? }` → `{ path, title, purpose, docKind, layer, status, why }[]`
 - `bank_read { path, section? }` → `{ path, frontmatter, content }`
-- ресурс `memorybank://index`
-- ресурс `memorybank://schema/frontmatter` — отдаёт `dna/frontmatter.md` банка как есть
+- resource `memorybank://index`
+- resource `memorybank://schema/frontmatter` — serves the bank's `dna/frontmatter.md` as is
 
-**Готовность:** пять контрольных вопросов по AgentUpwork и пять по showmojo/backend.
-Контрольный набор для AgentUpwork:
+**Readiness:** five control questions against AgentUpwork and five against showmojo/backend.
+The AgentUpwork control set:
 
-| Вопрос | Ожидаемый первый результат |
+| Question | Expected first result |
 |---|---|
-| где пороги фильтрации | `domain/rules.md` |
-| почему сбор через расширение | `adr/ADR-...-collection-via-chrome-extension.md` |
-| как задеплоить бэкенд | `ops/deployment.md` |
-| правила фронтматтера | `dna/frontmatter.md` |
-| что делать при блокировке сессии | `ops/account-safety.md` |
+| where are the filter thresholds | `domain/rules.md` |
+| why is collection done through an extension | `adr/ADR-...-collection-via-chrome-extension.md` |
+| how do I deploy the backend | `ops/deployment.md` |
+| frontmatter rules | `dna/frontmatter.md` |
+| what to do when the session is blocked | `ops/account-safety.md` |
 
-Дополнительно: ни в одной выдаче нет документа с `doc_function: template`; на showmojo
-минимум 3 из 5 верхних результатов — не из `features/`.
+Plus: no result set contains a document with `doc_function: template`; on showmojo at least 3 of the
+top 5 results are not from `features/`.
 
-`bank_read` с `section` на `crybot/tasks/active.md` (192 КБ) возвращает один раздел,
-а не файл целиком.
+`bank_read` with `section` on `crybot/tasks/active.md` (192 KB) returns one section, not the whole
+file.
 
-### E2 — Валидация (~1–2 дня)
+### E2 — Validation (~1–2 days)
 
-`bank_validate { scope? }` → `{ severity, rule, path, message }[]` и ресурс `memorybank://health`.
+`bank_validate { scope? }` → `{ severity, rule, path, message }[]` and the `memorybank://health`
+resource.
 
-Правила в порядке измеренной продуктивности. Числа — фактический прогон реализованного
-валидатора по всем 19 банкам (321 находка), а не оценка:
+Rules in order of measured productivity. The numbers are an actual run of the implemented validator
+across all 19 banks (321 findings), not an estimate:
 
-| Правило | Severity | Находок | В спеке? |
+| Rule | Severity | Findings | In the spec? |
 |---|---|---|---|
-| `unknown-enum-value` (значение вне того, что объявлено в `dna/`) | warning | **212** | нет |
-| `broken-derived-from` | error | **38** | да |
-| `invalid-frontmatter` (YAML не парсится) | error | **22** | нет |
-| `cycle-in-derived-from` (governance: циклы запрещены) | error | **15** | нет |
-| `unregistered-doc` | warning | **13** | да |
-| `unresolved-rule-reference` (документ ссылается на правило по пути, который не резолвится) | warning | **13** | нет |
-| `no-contract` (в банке нет `dna/`) | warning | **6** | нет |
-| `ssot-conflict` | error | **1** | да |
-| `missing-derived-from` (governance: каждый `active` не-корневой обязан иметь) | error | **1** | нет |
-| `must-not-define-violated` | error | **0** | да |
-| `dangling-index-entry` | error | **0** (из 1670 ссылок) | да |
-| `stale-draft` | — | выкинуто | да |
+| `unknown-enum-value` (a value outside what `dna/` declares) | warning | **212** | no |
+| `broken-derived-from` | error | **38** | yes |
+| `invalid-frontmatter` (YAML does not parse) | error | **22** | no |
+| `cycle-in-derived-from` (governance: cycles forbidden) | error | **15** | no |
+| `unregistered-doc` | warning | **13** | yes |
+| `unresolved-rule-reference` (a document cites a rule by a path that does not resolve) | warning | **13** | no |
+| `no-contract` (the bank has no `dna/`) | warning | **6** | no |
+| `ssot-conflict` | error | **1** | yes |
+| `missing-derived-from` (governance: every `active` non-root document must have one) | error | **1** | no |
+| `must-not-define-violated` | error | **0** | yes |
+| `dangling-index-entry` | error | **0** (out of 1670 links) | yes |
+| `stale-draft` | — | dropped | yes |
 
-Поправки к прежним оценкам, полученные на реализации:
+Corrections to earlier estimates, produced by the implementation:
 
-- `broken-derived-from` — 38, а не 43. В черновом замере объектная форма `- path: ... / fit: ...`
-  резолвилась как путь `path: ../x.md` и давала пять ложных срабатываний.
-- `missing-derived-from` — 1, а не 39. Правило применяется только там, где governance его
-  объявляет («Every `active` non-root document must define `derived_from`» — 7 банков из 19).
-  В crybot 37 документов без `derived_from`, но его governance этого не требует, поэтому это
-  не нарушение.
-- `cycle-in-derived-from` — 15 уникальных циклов. Типовая форма: индекс раздела выводится из своих
-  же документов, а они — из индекса (`ops/README.md` ↔ `ops/config.md`).
-- `dangling-rule-reference` из прежнего плана заменено на `unresolved-rule-reference`. Проверка по
-  словам давала ложные срабатывания и пропускала настоящий дефект; проверка резолва пути точна
-  и подсказывает верный путь.
+- `broken-derived-from` — 38, not 43. In the draft measurement the object form
+  `- path: ... / fit: ...` resolved as the path `path: ../x.md` and produced five false positives.
+- `missing-derived-from` — 1, not 39. The rule applies only where governance declares it ("Every
+  `active` non-root document must define `derived_from`" — 7 banks out of 19). crybot has 37
+  documents with no `derived_from`, but its governance does not require one, so that is not a
+  violation.
+- `cycle-in-derived-from` — 15 unique cycles. The typical shape: a section index derives from its own
+  documents, and they derive from the index (`ops/README.md` ↔ `ops/config.md`).
+- `dangling-rule-reference` from the earlier plan was replaced with `unresolved-rule-reference`.
+  Checking by words produced false positives and missed the real defect; checking path resolution is
+  exact and suggests the correct path.
 
-**Правила делятся на структурные и контрактные.** Структурные (битые рёбра, невалидный YAML,
-второй владелец, сироты, нерезолвящиеся ссылки) работают и в банке без `dna/`. Контрактные
-(`missing-derived-from`, циклы, неизвестные значения) применяются только там, где банк сам их
-объявил — сервер исполняет правила банка, а не свои.
+**Rules split into structural and contract rules.** Structural ones (broken edges, invalid YAML, a
+second owner, orphans, unresolvable references) work even in a bank with no `dna/`. Contract ones
+(`missing-derived-from`, cycles, unknown values) apply only where the bank declared them itself — the
+server enforces the bank's rules, not its own.
 
-**Готовность:** прогон по 19 банкам находит оба известных дефекта AgentUpwork — битый
-`derived_from` на `engineering/developer-docs-commands-safety.md` в `flows/feature-flow.md`
-и гейт `Done`, ссылающийся на `testing-policy.md` по пути, который из `flows/` не резолвится, —
-и даёт **ноль** ложных срабатываний на 35 external-рёбрах (проверяется тестом на Passix, где их 17).
+**Readiness:** a run across 19 banks finds both known AgentUpwork defects — the broken `derived_from`
+on `engineering/developer-docs-commands-safety.md` in `flows/feature-flow.md`, and the `Done` gate
+citing `testing-policy.md` by a path that does not resolve from `flows/` — and gives **zero** false
+positives on the 35 external edges (covered by a test against Passix, which has 17 of them).
 
-### E3 — Граф (~1 день) — **готово**
+### E3 — Graph (~1 day) — **done**
 
 `bank_graph { path, direction: 'up'|'down'|'both', depth?, limit? }` → `{ nodes, edges, external, broken, byLayer, truncated }`.
 
-Обход по ширине. Три исхода ребра разделены: внутреннее становится узлом, внешнее уходит в
-`external`, битое — в `broken`. `fit` передаётся в ребре. Потолок узлов (по умолчанию 60) не даёт
-документу-хабу вытянуть весь банк, циклы безопасны — посещённый узел не разворачивается второй раз.
+Breadth-first. The three edge outcomes are separated: an internal one becomes a node, an external one
+goes to `external`, a broken one to `broken`. `fit` is carried on the edge. A node ceiling (60 by
+default) keeps a hub document from dragging in the whole bank, and cycles are safe — a visited node
+is not expanded twice.
 
-**Проверено:** `down` по `domain/rules.md` в AgentUpwork возвращает ровно те 8 документов, что
-опираются на пороги — 3 знания, 2 решения, 3 фичи. `up` по `features/FT-SMD-843/brief.md` в showmojo
-возвращает 9 узлов и сохраняет все 4 `fit`. `down` по `dna/governance.md` упирается в потолок и
-честно ставит `truncated: true`. На crybot (49 документов, 0 рёбер) возвращает одиночный узел без
-ошибки. В Passix `up` по документу вложенного банка показывает ребро в `external`, а не в `broken`.
+**Verified:** `down` on `domain/rules.md` in AgentUpwork returns exactly the 8 documents that rest on
+the thresholds — 3 knowledge, 2 decisions, 3 features. `up` on `features/FT-SMD-843/brief.md` in
+showmojo returns 9 nodes and preserves all 4 `fit` values. `down` on `dna/governance.md` hits the
+ceiling and honestly sets `truncated: true`. On crybot (49 documents, 0 edges) it returns a single
+node without error. In Passix, `up` on a document of a nested bank shows the edge under `external`,
+not `broken`.
 
-### E4 — Поиск и дельта (~1 день) — **готово**
+### E4 — Search and delta (~1 day) — **done**
 
 - `bank_search { query, docKind?, layer?, status?, limit? }` → `{ path, title, excerpt, line, score, hits }[]`
 - `bank_changed { since }` → `{ since, mode, repo?, changes, note? }`
 
-Инвертированный индекс в памяти, синхронизируется по `mtime` вместе с основным. На showmojo —
-368 документов, 15 648 терминов, 210 мс на полную сборку; дальше только изменённые.
+An in-memory inverted index, synced by `mtime` along with the main one. On showmojo — 368 documents,
+15,648 terms, 210 ms for a full build; after that only what changed.
 
-Индекс хранит и составной токен, и его части, но **запрос** взвешивает целый токен вдесятеро выше
-частей. Без этого `FT-SMD-843` поднимал бы `features/README.md` — реестр с семьюдесятью строками
-`FT-SMD-*` — выше самой фичи.
+The index stores both a compound token and its parts, but the **query** weights a whole token ten
+times its parts. Without that, `FT-SMD-843` would lift `features/README.md` — a registry with seventy
+`FT-SMD-*` lines — above the feature itself.
 
-`bank_changed` различает два режима. Git-ref даёт настоящую дельту: добавления, изменения, удаления,
-переименования плюс неотслеживаемые файлы. ISO-дата откатывается на `mtime` и честно сообщает, что
-не видит удалений и не отличает новый документ от изменённого. Все 19 банков лежат внутри
-git-репозиториев, так что основной режим — git.
+`bank_changed` distinguishes two modes. A git ref gives a real delta: additions, modifications,
+deletions, renames, plus untracked files. An ISO date falls back to `mtime` and says honestly that it
+cannot see deletions and cannot tell a new document from a modified one. All 19 banks live inside git
+repositories, so git is the primary mode.
 
-**Проверено:** поиск `FT-SMD-843` в showmojo ставит первыми документы самого пакета; `REQ-01` в
-AgentUpwork находит только слой доставки с точной строкой и её номером; `bank_changed HEAD~5`
-возвращает 10 изменений с типами; несуществующий ref даёт внятную ошибку, а не пустой список.
+**Verified:** searching `FT-SMD-843` in showmojo puts the package's own documents first; `REQ-01` in
+AgentUpwork finds only the delivery layer, with the exact line and its number; `bank_changed HEAD~5`
+returns 10 changes with their types; a nonexistent ref gives a clear error rather than an empty list.
 
-### E5 — Запись (~2 дня) — **готово**
+**Defect found later, by the generated acceptance suite.** `bank_changed` subtracted the repository
+root reported by git from the bank root as given. Those differ whenever the bank is reached through
+a symlink — on macOS every path under `$TMPDIR` is one — and every file then looked like it sat
+outside the bank. The delta came back **empty rather than failing**, which reads as "nothing
+changed". Both ends are now resolved before subtracting. No test against the real banks could have
+caught this: their paths are not symlinked. It took running the criteria against a bank the build
+generates in a temp directory.
+
+### E5 — Writes (~2 days) — **done**
 
 `bank_create { docKind, path, title, purpose, derivedFrom?, canonicalFor?, mustNotDefine?, status?, extra?, inbox?, dryRun? }`
 → `{ path, created, frontmatter, template, registeredIn, warnings, preview }`
 
-Шаблоны в этих банках — обёртки: документ для инстанцирования лежит внутри них двумя фенсами под
-`## Instantiated Frontmatter` и `## Instantiated Body` (17 шаблонов из 24 в AgentUpwork; остальные
-плоские и копируются целиком). Сервер разворачивает embedded-контракт, подставляет заголовок в H1,
-заполняет плейсхолдер `date` и переносит `must_not_define`, который шаблон несёт как governance,
-но отбрасывает `derived_from` и `canonical_for` шаблона — они там заведомо заглушки.
+Templates in these banks are wrappers: the document to instantiate sits inside them as two fenced
+blocks under `## Instantiated Frontmatter` and `## Instantiated Body` (17 of AgentUpwork's 24
+templates; the rest are flat and get copied whole). The server unwraps the embedded contract,
+substitutes the title into the H1, fills the `date` placeholder and carries over `must_not_define`,
+which the template ships as governance — but discards the template's `derived_from` and
+`canonical_for`, which are placeholders by construction.
 
-Выбор шаблона идёт по `template_for` и имени файла из `template_target_path`: именно оно отличает
-`brief.md` от `design.md` внутри одного `doc_kind`.
+Template selection goes by `template_for` and by the filename in `template_target_path`: that is what
+distinguishes `brief.md` from `design.md` within one `doc_kind`.
 
-Отказы: занятый путь, нерезолвящийся `derived_from`, занятый `canonical_for`, путь за пределами
-банка, не-`.md`, пустой `purpose`. Незнакомый `doc_kind` или `status` — предупреждение, не отказ:
-контракт открытый.
+Refusals: a taken path, an unresolvable `derived_from`, a taken `canonical_for`, a path outside the
+bank, a non-`.md` path, an empty `purpose`. An unknown `doc_kind` or `status` is a warning, not a
+refusal: the contract is open.
 
-Регистрация в индексе копирует форму последней записи — таблица, буллет или нумерованный пункт.
-`dryRun` показывает результат, ничего не записывая.
+Index registration copies the shape of the last entry — table row, bullet, or numbered item.
+`dryRun` shows the result and writes nothing.
 
-`inbox: true` — карантин: `_inbox/`, `status: draft`, без шаблона и без регистрации. Слой `inbox`
-ранжируется с множителем 0.2 и освобождён от `unregistered-doc`.
+`inbox: true` is the quarantine: `_inbox/`, `status: draft`, no template and no registration. The
+`inbox` layer is ranked with a 0.2 multiplier and is exempt from `unregistered-doc`.
 
-Побочный эффект, который стоит назвать: документ, созданный через `bank_create`, физически не может
-получить дефект `invalid-frontmatter` — сериализация квотит значение с двоеточием. Это тот самый
-класс ошибки, что найден в 22 документах корпуса.
+One side effect worth naming: a document created through `bank_create` physically cannot acquire an
+`invalid-frontmatter` defect — serialization quotes a value containing a colon. That is exactly the
+error class found in 22 documents of the corpus.
 
-**Проверено:** на копии банка AgentUpwork ADR создаётся из `flows/templates/adr/ADR-ID.md`,
-регистрируется строкой таблицы в `adr/README.md` в существующей форме, и `bank_validate` после
-этого возвращает ровно столько же находок, сколько до — 21. Запись в `_inbox` тоже не добавляет
-ни одной.
+**Verified:** on a copy of the AgentUpwork bank, an ADR is created from `flows/templates/adr/ADR-ID.md`,
+registered as a table row in `adr/README.md` in the existing shape, and `bank_validate` afterwards
+returns exactly as many findings as before — 21. Writing to `_inbox` adds none either.
 
-### E6 — Карантин и его разгрузка — **готово**
+### E6 — The quarantine and emptying it — **done**
 
-Сверх плана, по приоритету «запись без команды».
+Beyond the plan, driven by the "writes without being told" priority.
 
 `bank_promote { path, to, docKind?, title?, purpose?, derivedFrom?, canonicalFor?, status?, dryRun? }`
-переносит заметку из `_inbox/` в канонический слой: тело сохраняется как написано, frontmatter
-пересобирается по контракту, шаблон назначения отдаёт только governance-поля, документ
-регистрируется в индексе, исходник удаляется. Гейты общие с `bank_create` плюс два своих —
-повышать можно только из `_inbox/` и только наружу. Статус после повышения `active`, поэтому
-требование про `derived_from` здесь уже не смягчается до предупреждения.
+moves a note from `_inbox/` into a canonical layer: the body is kept as written, the frontmatter is
+rebuilt against the contract, the destination template contributes only its governance fields, the
+document is registered in the index, and the source is deleted. Gates are shared with `bank_create`
+plus two of its own — you can only promote out of `_inbox/`, and only outward. Status after promotion
+is `active`, so the `derived_from` requirement is no longer softened to a warning here.
 
-Ресурс `memorybank://inbox` и промпт `review-inbox` дают недельный разбор: для каждой заметки —
-повысить, вписать в существующего владельца руками или выбросить.
+The `memorybank://inbox` resource and the `review-inbox` prompt give a weekly review: for each note —
+promote, fold into an existing owner by hand, or throw away.
 
-Наполняет карантин Stop-хук `hooks/capture-to-inbox.sh`. Он молчит, пока не выполнены все четыре
-условия: не рекурсия (`stop_hook_active`), в проекте есть `memory_bank/`, рабочее дерево грязное,
-маркер сессии ещё не поставлен. То есть сессия «спросил и ушёл» не производит ни одной заметки.
+The quarantine is filled by the `hooks/capture-to-inbox.sh` Stop hook. It stays quiet until all four
+conditions hold: not a recursion (`stop_hook_active`), the project has a `memory_bank/`, the working
+tree is dirty, the session marker is not set yet. In other words, an "asked and left" session
+produces no notes at all.
 
-**Проверено:** полный круг на копии AgentUpwork — захват в `_inbox`, `--list-inbox`, повышение в
-`engineering/`, запись в `engineering/README.md`, документ находится маршрутизацией, `bank_validate`
-остаётся на 21 находке. Логика хука проверена по всем четырём ветвям. Не проверено: фактическая
-загрузка хука самим Claude Code — в песочнице этой сессии Stop-хуки не регистрировались ни из
-`.claude/settings.json`, ни через `--settings`.
+**Verified:** the full circuit on a copy of AgentUpwork — capture into `_inbox`, `--list-inbox`,
+promotion into `engineering/`, the entry in `engineering/README.md`, the document found by routing,
+`bank_validate` still at 21 findings. The hook's logic is verified across all four branches. Not
+verified: whether Claude Code actually loads the hook — in this session's sandbox, Stop hooks
+registered neither from `.claude/settings.json` nor via `--settings`.
 
-## 3. Что не входит в v1
+## 3. Not in v1
 
-- **`bank_owner` как отдельный инструмент.** Один SSoT-конфликт на 1153 документа; `canonical_for`
-  заполнен у 29% и полностью отсутствует в 8 банках. Правило `ssot-conflict` остаётся в валидации,
-  отдельный инструмент не окупается. Вернуться, когда разметка вырастет.
-- **Эмбеддинги.** Порог — тысяча документов *в одном банке*; сейчас максимум 368.
-- **Мультикорень.** Один процесс — один корень. External-рёбра просто помечаются.
-- **Редактирование существующих документов.** Сервер владеет только созданием и регистрацией.
-- **Watcher.** `stat()` дешевле.
+- **`bank_owner` as a separate tool.** One SSoT conflict across 1153 documents; `canonical_for` is
+  filled on 29% and completely absent in 8 banks. The `ssot-conflict` rule stays in validation, but a
+  separate tool does not pay for itself. Revisit when the annotation grows.
+- **Embeddings.** The threshold is a thousand documents *in one bank*; the current maximum is 368.
+- **Multi-root.** One process, one root. External edges are simply marked.
+- **Editing existing documents.** The server owns creation and registration only.
+- **A watcher.** `stat()` is cheaper.
 
-Итог: семь инструментов вместо восьми, из них четыре — в первых двух этапах.
+Net: seven tools instead of eight, four of them in the first two stages.
 
-## 4. Как сервер встраивается в рабочий процесс
+## 4. How the server fits into the working process
 
-Три точки, все — в существующий `flows/feature-flow.md`, без новой методологии:
+Three touch points, all in the existing `flows/feature-flow.md`, with no new methodology:
 
-| Где | Что заменяет |
+| Where | What it replaces |
 |---|---|
-| Начало задачи | `bank_route` вместо цепочки `README.md` → индекс раздела → документ |
-| Гейт перед исполнением | `bank_graph down` по затронутым владельцам — «что сломается» |
-| Гейт `→ Done` | `bank_validate` в списке обязательных проверок |
+| Start of a task | `bank_route` instead of the `README.md` → section index → document chain |
+| The gate before execution | `bank_graph down` on the affected owners — "what breaks" |
+| The `→ Done` gate | `bank_validate` in the list of required checks |
 
-## 5. Риски
+## 5. Risks
 
-| Риск | Проявление | Митигация |
+| Risk | How it shows up | Mitigation |
 |---|---|---|
-| Перекос ранжирования на больших банках | showmojo: 80% документов — журнал доставки | множители слоя, проверяется контрольными вопросами в E1 |
-| Половина банков без governance-слоя | 5 банков без `dna/`, ещё 5 с усечённым | degraded mode, валидация выключается явно |
-| Контракт `dna/` расходится между банками | байт-в-байт совпадает только в 5 из 14 | контракт читается из своего банка, не из эталона |
-| Расширение области до «сервер всё умеет» | восемь инструментов уже в спеке | раздел «что не входит в v1» — граница на бумаге |
+| Ranking skew on large banks | showmojo: 80% of documents are a delivery journal | layer multipliers, checked by the E1 control questions |
+| Half the banks have no governance layer | 5 banks with no `dna/`, another 5 with a truncated one | degraded mode, validation switched off explicitly |
+| The `dna/` contract diverges between banks | byte-identical in only 5 of 14 | the contract is read from the bank's own copy, not from a reference one |
+| Scope creep into "the server does everything" | eight tools already in the spec | the "not in v1" section — a boundary on paper |
 
-## 6. Сводный график
+## 6. Summary schedule
 
-| Этап | Дней | Накопительно | Что появляется | Статус |
+| Stage | Days | Cumulative | What appears | Status |
 |---|---|---|---|---|
-| E0 | 0.5 | 0.5 | индекс, `--stats` | **готово** |
-| E1 | 1.5 | 2 | навигация без чтения README | **готово** |
-| E2 | 1.5 | 3.5 | 321 реальная находка в 19 банках | **готово** |
-| E3 | 1 | 4.5 | ответ на «что сломается» | **готово** |
-| E4 | 1 | 5.5 | поиск и дельта между сессиями | **готово** |
-| E5 | 2 | 7.5 | создание документов без ручных шагов | **готово** |
+| E0 | 0.5 | 0.5 | the index, `--stats` | **done** |
+| E1 | 1.5 | 2 | navigation without reading READMEs | **done** |
+| E2 | 1.5 | 3.5 | 321 real findings across 19 banks | **done** |
+| E3 | 1 | 4.5 | an answer to "what breaks" | **done** |
+| E4 | 1 | 5.5 | search and a delta between sessions | **done** |
+| E5 | 2 | 7.5 | documents created with no manual steps | **done** |
 
-E1 и E2 самодостаточны: если дальше не пойдёт, навигация и валидатор уже окупают работу.
+E1 and E2 are self-sufficient: if it goes no further, navigation and the validator already pay for
+the work.

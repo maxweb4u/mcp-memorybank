@@ -1,6 +1,7 @@
 import type { BankDoc, Layer } from './types.js'
 import { LAYER_WEIGHT } from './layer.js'
 import type { Bank } from './bank.js'
+import { expandTerms, RU_STOP, WHY_INTENT, type QueryTerm } from './lang.js'
 
 const FIELD_WEIGHT = { canonicalFor: 5, purpose: 3, title: 2, section: 1 } as const
 
@@ -10,6 +11,7 @@ const CLOSED_DELIVERY = new Set(['done', 'cancelled'])
 const STOP = new Set([
   'the', 'a', 'an', 'of', 'in', 'on', 'for', 'to', 'and', 'or', 'is', 'are', 'what', 'where', 'how',
   'which', 'that', 'this', 'do', 'does', 'when', 'why', 'who', 'with', 'about', 'i', 'we', 'it',
+  ...RU_STOP,
 ])
 
 export function tokenize(text: string): string[] {
@@ -26,17 +28,36 @@ interface FieldHit {
   detail?: string
 }
 
-function scoreField(tokens: string[], words: string[]): { score: number; hits: string[] } {
+/** A translation is a real concept hit, but the word actually typed should still win a tie. */
+const TRANSLATION_DISCOUNT = 0.9
+
+function matchWord(word: string, words: string[], set: Set<string>): number {
+  if (set.has(word)) return 1
+  if (word.length >= 4 && words.some((w) => w.startsWith(word) || word.startsWith(w))) return 0.6
+  return 0
+}
+
+/**
+ * Scored per query term, not per word: a Russian term carries its English equivalents with it, and
+ * three equivalents matching one `purpose` is still one concept, not three.
+ */
+function scoreField(terms: QueryTerm[], words: string[]): { score: number; hits: string[] } {
   const set = new Set(words)
   let score = 0
   const hits: string[] = []
-  for (const token of tokens) {
-    if (set.has(token)) {
-      score += 1
-      hits.push(token)
-    } else if (token.length >= 4 && words.some((w) => w.startsWith(token) || token.startsWith(w))) {
-      score += 0.6
-      hits.push(token)
+  for (const term of terms) {
+    let best = matchWord(term.literal, words, set)
+    let bestWord = term.literal
+    for (const translation of term.translations) {
+      const value = matchWord(translation, words, set) * TRANSLATION_DISCOUNT
+      if (value > best) {
+        best = value
+        bestWord = translation
+      }
+    }
+    if (best > 0) {
+      score += best
+      hits.push(bestWord)
     }
   }
   return { score, hits }
@@ -59,18 +80,15 @@ export interface RouteOptions {
   layer?: Layer
 }
 
-/** ADRs exist to answer "why"; a why-question should outrank the component description. */
-const WHY = /(\bwhy\b|\brationale\b|\bdecision\b|\bdecided\b|instead of|trade-?off|почему)/i
-
 function layerWeights(question: string): Record<Layer, number> {
-  if (!WHY.test(question)) return LAYER_WEIGHT
+  if (!WHY_INTENT.test(question)) return LAYER_WEIGHT
   return { ...LAYER_WEIGHT, decision: 1.6, knowledge: 1.2 }
 }
 
 export function route(bank: Bank, question: string, opts: RouteOptions = {}): RouteResult[] {
-  const tokens = tokenize(question)
+  const terms = expandTerms(tokenize(question))
   const weights = layerWeights(question)
-  if (tokens.length === 0) return []
+  if (terms.length === 0) return []
   const limit = opts.limit ?? 5
   const scored: (RouteResult & { raw: number })[] = []
 
@@ -90,7 +108,7 @@ export function route(bank: Bank, question: string, opts: RouteOptions = {}): Ro
     for (const key of doc.canonicalFor) {
       const words = tokenize(key)
       if (words.length === 0) continue
-      const { score } = scoreField(tokens, words)
+      const { score } = scoreField(terms, words)
       const weighted = (score / words.length) * FIELD_WEIGHT.canonicalFor
       if (weighted > canonicalScore) {
         canonicalScore = weighted
@@ -102,13 +120,13 @@ export function route(bank: Bank, question: string, opts: RouteOptions = {}): Ro
       hits.push({ field: 'canonicalFor', token: '', exact: true, detail: ownedKey })
     }
 
-    const purpose = scoreField(tokens, tokenize(doc.purpose))
+    const purpose = scoreField(terms, tokenize(doc.purpose))
     if (purpose.score > 0) {
       raw += purpose.score * FIELD_WEIGHT.purpose
       hits.push({ field: 'purpose', token: purpose.hits.join(', '), exact: true })
     }
 
-    const title = scoreField(tokens, tokenize(doc.title))
+    const title = scoreField(terms, tokenize(doc.title))
     if (title.score > 0) {
       raw += title.score * FIELD_WEIGHT.title
       hits.push({ field: 'title', token: title.hits.join(', '), exact: true })
@@ -117,7 +135,7 @@ export function route(bank: Bank, question: string, opts: RouteOptions = {}): Ro
     let bestSection: string | undefined
     let sectionScore = 0
     for (const section of doc.sections) {
-      const s = scoreField(tokens, tokenize(section.title))
+      const s = scoreField(terms, tokenize(section.title))
       if (s.score > sectionScore) {
         sectionScore = s.score
         bestSection = section.title

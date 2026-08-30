@@ -1,25 +1,26 @@
-# Захват в `_inbox` по завершении сессии
+# Capturing to `_inbox` at the end of a session
 
-`capture-to-inbox.sh` — Stop-хук: после сессии, в которой действительно шла работа, он один раз
-просит агента записать в карантин банка то, что стоит помнить. Агент делает это через
-`bank_create` с `inbox: true`; ничего не попадает в канонические слои без твоего решения.
+`capture-to-inbox.sh` is a Stop hook: after a session in which work actually happened, it asks the
+agent once to write down, into the bank's quarantine, whatever is worth remembering. The agent does
+that through `bank_create` with `inbox: true`; nothing reaches a canonical layer without your
+decision.
 
-## Когда молчит
+## When it stays quiet
 
-Хук намеренно ничего не делает, если не выполнено хотя бы одно из четырёх:
+The hook deliberately does nothing unless all four conditions hold:
 
-| Условие | Зачем |
+| Condition | Why |
 |---|---|
-| `stop_hook_active` не `true` | защита от рекурсии: повторный заход не блокирует остановку снова |
-| в проекте есть `memory_bank/` | иначе записывать некуда |
-| рабочее дерево грязное | сессия «спросил и ушёл» ничего долговечного не производит |
-| маркера сессии ещё нет | один вопрос на сессию, а не на каждый ход |
+| `stop_hook_active` is not `true` | recursion guard: a second pass must not block the stop again |
+| the project has a `memory_bank/` | otherwise there is nowhere to write |
+| the working tree is dirty | an "asked and left" session produces nothing durable |
+| the session marker is not set yet | one prompt per session, not per turn |
 
-Маркер — файл `$TMPDIR/memorybank-capture-<session_id>`.
+The marker is a file at `$TMPDIR/memorybank-capture-<session_id>`.
 
-## Установка
+## Installation
 
-В проекте с банком, `<project>/.claude/settings.json`:
+In a project that has a bank, `<project>/.claude/settings.json`:
 
 ```json
 {
@@ -27,32 +28,32 @@
     "Stop": [
       {
         "type": "command",
-        "command": "/абсолютный/путь/memorybank/hooks/capture-to-inbox.sh"
+        "command": "/absolute/path/memorybank/hooks/capture-to-inbox.sh"
       }
     ]
   }
 }
 ```
 
-Требуется `jq` и `git`. Проверить, что хук зарегистрирован, можно командой `/hooks` в
-интерактивной сессии этого проекта.
+Requires `jq` and `git`. To confirm the hook is registered, run `/hooks` in an interactive session
+of that project.
 
-## Разбор карантина
+## Working through the quarantine
 
-Хук только наполняет `_inbox/`. Разгружается он отдельно и с твоим участием:
+The hook only fills `_inbox/`. Emptying it is a separate step, and you are in the loop:
 
 ```bash
 node dist/cli.js --root <bank> --list-inbox
 node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.md --derived ../dna/principles.md --dry-run
 ```
 
-В сессии для этого есть ресурс `memorybank://inbox` и промпт `review-inbox`, который проходит
-по накопившемуся и для каждой заметки предлагает одно из трёх: повысить, вписать в существующего
-владельца руками, выбросить как транзиентное. Предпочтение — вписать: новый документ оправдан
-только когда факта не покрывает никто.
+In a session there is the `memorybank://inbox` resource and the `review-inbox` prompt, which walks
+what has piled up and offers one of three outcomes per note: promote it, fold it into an existing
+owner by hand, or throw it away as transient. Folding in is preferred: a new document is justified
+only when no one covers the fact.
 
-## Почему не `type: "prompt"`
+## Why not `type: "prompt"`
 
-Промпт-хук — это модельный вызов на каждой остановке в каждой сессии проекта. Решение «была ли
-тут работа» дешевле принять по состоянию рабочего дерева, а суждение «есть ли тут долговечный
-факт» всё равно принимает основной агент, когда получает `stopReason`.
+A prompt hook is a model call on every stop in every session of the project. Deciding "was there
+work here" is cheaper from the state of the working tree, and the judgement "is there a durable fact
+here" is made by the main agent anyway, once it receives the `stopReason`.

@@ -25,6 +25,7 @@ describe('stdio server', () => {
         'bank_changed',
         'bank_create',
         'bank_graph',
+        'bank_init',
         'bank_promote',
         'bank_read',
         'bank_route',

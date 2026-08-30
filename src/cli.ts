@@ -7,6 +7,7 @@ import { graph, type Direction } from './graph.js'
 import { SearchIndex, search } from './search.js'
 import { changed } from './changed.js'
 import { create, inbox, promote } from './create.js'
+import { init } from './init.js'
 import { startServer } from './server.js'
 
 interface Args {
@@ -36,10 +37,12 @@ interface Args {
   promote?: string
   to?: string
   listInbox: boolean
+  init?: string
+  force: boolean
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { stats: false, validate: false, summary: false, inbox: false, dryRun: false, listInbox: false }
+  const args: Args = { stats: false, validate: false, summary: false, inbox: false, dryRun: false, listInbox: false, force: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--root') args.root = argv[++i]
@@ -68,6 +71,8 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--promote') args.promote = argv[++i]
     else if (a === '--to') args.to = argv[++i]
     else if (a === '--list-inbox') args.listInbox = true
+    else if (a === '--init') args.init = argv[++i]
+    else if (a === '--force') args.force = true
   }
   return args
 }
@@ -111,7 +116,7 @@ function printStats(bank: Bank, ms: number): void {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   if (!args.root) {
-    console.error('usage: memorybank-mcp --root <path-to-memory_bank> [--stats | --route "question" | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox]')
+    console.error('usage: memorybank-mcp --root <path-to-memory_bank> [--stats | --route "question" | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox | --init "Project Name" [--force] [--dry-run]]')
     process.exit(2)
   }
 
@@ -156,6 +161,15 @@ async function main(): Promise<void> {
     for (const [rule, n] of [...byRule.entries()].sort((a, b) => b[1] - a[1])) {
       console.log(`  ${String(n).padStart(4)}  ${rule}`)
     }
+    return
+  }
+
+  if (args.init !== undefined) {
+    const result = await init(bank, { name: args.init, dryRun: args.dryRun, force: args.force })
+    console.log(`${result.dryRun ? 'WOULD CREATE' : 'CREATED'} ${result.root}`)
+    console.log(`directories: ${result.directories.sort().join(', ')}`)
+    console.log(`files:       ${result.files.length}`)
+    for (const w of result.warnings) console.log(`warning:     ${w}`)
     return
   }
 
