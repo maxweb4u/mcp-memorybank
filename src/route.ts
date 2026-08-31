@@ -95,6 +95,10 @@ export function route(bank: Bank, question: string, opts: RouteOptions = {}): Ro
   for (const doc of bank.all()) {
     // Templates are structurally similar to every real document and would flood the list.
     if (doc.docFunction === 'template') continue
+    // The quarantine is not navigation. memorybank://inbox promises unreviewed captures are out of
+    // it until promoted, and damping them by layer weight is not the same as keeping that promise:
+    // measured on a young bank, a note reached the top three for the question it answered.
+    if (doc.layer === 'inbox') continue
     if (opts.docKind && doc.docKind !== opts.docKind) continue
     if (opts.layer && doc.layer !== opts.layer) continue
 

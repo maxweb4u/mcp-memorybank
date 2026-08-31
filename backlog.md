@@ -105,7 +105,43 @@ the tree has moved and a cooldown has passed.
 
 Nothing here blocks use.
 
-### B-01. `bank_append` — a narrow slot for appending
+### B-01. A narrow slot for writing into an existing document — **done**
+
+The original entry proposed `bank_append { path, section, content }` and left the shape undecided,
+because the boundary in §8 of the spec says the server does not edit existing documents. The field
+test decided it, and widened it.
+
+Two measurements. `bank_init` seeds `product/context.md` and `engineering/testing-policy.md` as
+drafts precisely so they will be filled, and `bank_create` refuses an occupied path — correctly — so
+the two documents the server asks for were the two it could not write. And `bank_create` had no body
+parameter at all: over one working session it produced nine governed creations while every word of
+prose arrived through six shell writes into the same bank.
+
+**Done.** `bank_create` takes a `body`. `bank_update_section` writes the body of one named level-two
+section of an existing document, leaving the frontmatter, the title and every other section
+untouched; a section that does not exist is refused with the list of the real ones rather than
+appended, and templates and quarantined notes are refused outright. The frontmatter block is
+preserved byte for byte rather than re-serialised, so a body edit cannot requote a string three
+sections away.
+
+The §8 boundary stands where it matters: nothing rewrites a document wholesale, and nothing edits a
+document the server did not first refuse to overwrite.
+
+**Second round, from the session after.** Section-level writing was the wrong grain for most edits.
+Of eleven shell writes into the bank in one session, five changed a few lines inside a long section
+and a sixth renamed a heading — replacing a whole section means resending everything unchanged around
+the edit, so the agent used a string replace instead, every time. `bank_edit` is that string replace
+with the guards: exact match, refused unless unique, count reported rather than the first occurrence
+guessed at, frontmatter out of reach.
+
+Three smaller things came from the same session. `bank_update_section` refused a quarantined note and
+pointed at promotion, which was wrong — a draft under review is exactly what gets amended before the
+decision — so it no longer refuses. `bank_promote` kept the captured body verbatim including relative
+links that only resolved from `_inbox/`, and now rewrites the ones that resolve inside the bank,
+reporting each as a warning. And a section index kept its "Empty. A first document of this kind is
+registered here." line after documents had been registered in it; registration clears it.
+
+### B-01a. `bank_append` — the original proposal, for the record
 
 Right now automatic capture creates a separate document in `_inbox/`. But most of what gets captured
 is a single line into an existing owner: a new gotcha in `engineering/gotchas.md`, a new term in
@@ -161,6 +197,22 @@ Two things came out of it that were not the point. `searchTokens` treated Cyrill
 any Russian text quoted in a document was silently absent from the search index — fixed. And field
 scoring now works per concept rather than per token, which also removes double counting when a query
 repeats a word in two forms.
+
+**Addendum from the field test.** Two further defects, both invisible until the server met a project
+outside the corpus it was built from.
+
+The server's own `instructions`, the `bank_route` description and the `question` parameter all told
+the agent to route in English. Written before the bilingual work and never revisited, they made an
+obedient agent translate the question itself and hand English to a server built to do that
+translation — the dictionary was dead code on the documented path, and the wording it was tuned
+against never reached the ranker. Fixed: pass the question in the words it was asked in.
+
+And the dictionary carries the subject matter it was drawn from. On a project about parsing books the
+Russian side went silent on `корпус`, `книга`, `прогон` — an empty answer, while the same question in
+English landed three ways out of three. Fixed with an optional `dna/vocabulary.md` the bank owner
+writes: a two-column table of Russian stems and their English equivalents, re-read on every refresh.
+On the field-test bank, four of five previously failing questions now return the right document
+first; the fifth misses in English too, which makes it a ranking question rather than a language one.
 
 ### B-07. `bank_init` — creating a bank from nothing — **done**
 

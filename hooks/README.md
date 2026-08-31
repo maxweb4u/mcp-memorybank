@@ -32,6 +32,25 @@ The fingerprint hashes the contents of the dirty files, not just their paths: an
 as `?? path` no matter how many times it is rewritten, and rewriting the same handful of files is
 precisely what a working session does.
 
+## What it returns, and why two shapes
+
+```json
+{ "decision": "block", "reason": "…", "continue": true, "instruction": "…" }
+```
+
+`decision: "block"` with a `reason` is the pair that actually reaches the agent. The documentation
+describes `continue: true` with an `instruction` instead, and that was tried first — over three
+firings in one working session the client accepted it (`exit 0`, `hook_success`, no stderr) and
+injected nothing: it recorded `content: ""` and the turn simply ended. Read literally, `continue:
+true` tells the client that stopping is fine, which is the opposite of the intent.
+
+Both shapes are emitted, so a client that reads either behaves the same. Blocking is safe here only
+because of the `stop_hook_active` guard at the top of the script: without it a hook that prevents the
+stop would be invoked again by its own continuation.
+
+The lesson is worth keeping: a hook can return exit 0 and be logged as a success while doing exactly
+nothing. Only the transcript shows whether anything arrived.
+
 ## Reminding you the queue has grown
 
 Capture is worth nothing if nobody empties the quarantine, and a folder inside the bank is easy not

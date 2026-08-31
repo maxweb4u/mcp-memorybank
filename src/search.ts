@@ -260,6 +260,7 @@ export function search(bank: Bank, index: SearchIndex, query: string, opts: Sear
     const doc = bank.get(path)
     if (!doc) continue
     if (doc.docFunction === 'template') continue
+    if (doc.layer === 'inbox') continue // quarantine: reachable by bank_read and the inbox tools only
     if (opts.docKind && doc.docKind !== opts.docKind) continue
     if (opts.layer && doc.layer !== opts.layer) continue
     if (opts.status && doc.status !== opts.status) continue

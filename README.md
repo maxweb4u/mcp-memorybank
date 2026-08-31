@@ -184,14 +184,17 @@ node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.m
 | Tool | What it does |
 |---|---|
 | `bank_route` | "what should I read about this" — ranks on `canonical_for`, `purpose`, `title`, section headings |
-| `bank_read` | a whole document, or one second-level section |
+| `bank_read` | a whole document, one second-level section, or several documents in one call, under a byte budget |
 | `bank_validate` | checks the bank against the rules the bank itself declares in `dna/` |
 | `bank_graph` | walks `derived_from`: `down` — who depends on this (blast radius), `up` — what it is built on |
 | `bank_search` | full-text search over document bodies — identifiers, names, literals |
 | `bank_changed` | what changed since a git ref or an ISO date |
 | `bank_init` | creates a bank from nothing: skeleton, `dna/`, templates, section indexes |
 | `bank_create` | creates a document from the bank's own template and registers it in the index, with gates and `_inbox` |
+| `bank_edit` | replaces one exact fragment of a body — a table row, a step, a heading; refuses an ambiguous match |
+| `bank_update_section` | writes the body of one named section of an existing document, leaving everything else alone |
 | `bank_promote` | moves a note out of `_inbox/` into a canonical layer, registering it and deleting the source |
+| `bank_discard` | drops a quarantined note, on the record — `_inbox/` only, and a reason is required |
 
 | Resource | Contents |
 |---|---|
@@ -200,9 +203,18 @@ node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.m
 | `memorybank://health` | a fresh `bank_validate` run, grouped by rule |
 | `memorybank://inbox` | what sits in quarantine, oldest first |
 
-Prompts: `route-then-read` (route first, read second), `check-before-commit` (run validation and
-explain every finding), `record-adr` (assemble a decision into an ADR), `review-inbox` (work through
-the quarantine).
+Prompts: `session-start` (what the project is, what is in flight, what is open — from the index and
+the delta, not by reading everything), `route-then-read` (route first, read second),
+`check-before-commit` (run validation and explain every finding), `record-adr` (assemble a decision
+into an ADR), `review-inbox` (work through the quarantine).
+
+Two of these exist because of what a working session actually did rather than what the design
+expected. Over an afternoon an agent called `bank_read` zero times and `cat` in a shell loop 85
+times: ten documents were ten tool calls one way and one call the other, so section scoping — the
+feature that keeps large documents out of the context window — lost on arithmetic before it was
+considered. Hence a `bank_read` that takes a list. And the first question of every session was
+"what is this, where did we stop, what is open", which routing does not answer; without somewhere to
+send it, the agent read the whole bank. Hence `session-start`.
 
 ### Creating a bank
 
@@ -226,6 +238,30 @@ rather than copying someone else's bank: a copy would bring that bank's defects 
 The mechanics of a write are under [How it works](#writing-one-operation-or-none); what follows is
 where the content comes from and where an unreviewed note goes.
 
+`bank_create` writes the body it is given and, failing that, the body of the matching template. Pass
+`body` rather than creating the document and writing the prose into it afterwards — a document that
+arrives as headings alone tends to get its content through a shell, outside every gate the server has.
+
+Two tools reach into a document that already exists, and the split between them is a measured one
+rather than a tidy one.
+
+`bank_update_section` writes the body of one named level-two section, leaving the frontmatter, the
+title and every other section untouched. It exists because `bank_init` seeds `product/context.md` and
+`engineering/testing-policy.md` as drafts specifically so they will be filled, while `bank_create`
+refuses an occupied path — correctly — which left the two documents the server asks for as the two it
+could not write. A section that does not exist is refused with the list of the real ones rather than
+appended, so a mistyped heading cannot quietly add a section.
+
+`bank_edit` replaces one exact fragment. Section-level writing turned out to be the wrong grain for
+most edits: over a working session, five of eleven shell writes into the bank changed a few lines
+inside a section dozens of lines long — a row of a table, two steps of a plan, one paragraph of an
+argument — and a sixth renamed a heading. Replacing the whole section means resending everything
+unchanged around the edit, so an agent reaches for a string replace instead, every time. The contract
+is the one it already knows: an exact match, refused unless it occurs exactly once, with the count
+reported rather than the first occurrence guessed at. `section` narrows the search when the same
+words appear twice. The frontmatter is out of reach by construction, since the search runs on the
+body — an edit can rename a heading, but it cannot quietly rewrite `canonical_for`.
+
 `bank_create` takes the template from the bank's own `flows/templates/`. Templates there are
 wrappers: the document to instantiate sits inside them as two blocks under
 `## Instantiated Frontmatter` and `## Instantiated Body`. The server unwraps exactly those,
@@ -234,14 +270,24 @@ template ships as governance. An unknown `doc_kind` is a warning, not a refusal,
 the whole result — frontmatter, chosen template, index line — while writing nothing.
 
 `inbox: true` puts the document in `_inbox/` with `status: draft`, with no template and no
-registration. The `inbox` layer is ranked with a 0.2 multiplier and is exempt from the
-`unregistered-doc` rule: it is a quarantine for automatic capture, reviewed later.
+registration. Quarantined documents are exempt from the `unregistered-doc` rule, and `bank_route`
+and `bank_search` do not return them at all — they are reachable by `bank_read`, the
+`memorybank://inbox` resource and `bank_promote`, and nowhere else. Damping them by layer weight was
+tried first and is not the same thing: on a young bank a note reached the top three for the question
+it answered, which is exactly what a quarantine is supposed to prevent.
 
 `bank_promote` empties the quarantine: the note body is kept as written, the frontmatter is rebuilt
 against the contract, the destination template contributes only its governance fields, the document
 is registered in the index, and the source is deleted. Same gates as `bank_create`, plus two of its
 own: you can only promote out of `_inbox/`, and only outward. Status after promotion is `active`, so
 the governance requirement about `derived_from` is no longer relaxed here.
+
+`bank_discard` is the third outcome, and it exists because the second review of a real quarantine
+went outside the server to reach it. A note can be promoted, folded into the document that already
+owns the fact with `bank_update_section`, or dropped — and with only the first two implemented, the
+agent folded a note in and then reached for `rm` in a shell to clear what it had just consumed. A
+tool that names three outcomes and supports two sends the third past every gate it has. `_inbox/`
+only, and a reason is required: a note goes on the record or it does not go.
 
 The quarantine is filled by a Stop hook — see [hooks/README.md](hooks/README.md).
 
@@ -272,6 +318,26 @@ dictionary.
 
 An unknown word is left exactly as typed — identifiers like `FT-042` and `filter_thresholds`
 never go near the dictionary.
+
+**The bank can add its own words.** The built-in dictionary carries the subject matter it was drawn
+from — agents, deployment, frontend, backend. Point the server at a project about parsing books and
+the Russian side goes quiet on `корпус`, `книга`, `прогон`: not a poor answer, an empty one, while
+the same question in English lands three ways out of three. The English side never has this problem
+because it is read from the bank; the Russian side cannot be, since the bank is English by governance
+rule. So write it down, in an optional `dna/vocabulary.md`:
+
+```markdown
+| Russian stem | English |
+|---|---|
+| корпус | corpus, collection |
+| книг | book, books, ebook |
+| сегмент | segmentation, segmenter, sentence |
+```
+
+The left column is a stem — the shortest prefix shared by every inflected form — and rows that are
+not two columns with a Cyrillic left side are ignored, so the file can carry prose and headings
+around the table. It is re-read on every refresh, so editing it takes effect without a restart. The
+file is not seeded by `bank_init`: a bank that does not need one should not carry an empty one.
 
 ### Validation rules
 

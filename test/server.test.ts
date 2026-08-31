@@ -24,12 +24,15 @@ describe('stdio server', () => {
       expect(tools.tools.map((t) => t.name).sort()).toEqual([
         'bank_changed',
         'bank_create',
+        'bank_discard',
+        'bank_edit',
         'bank_graph',
         'bank_init',
         'bank_promote',
         'bank_read',
         'bank_route',
         'bank_search',
+        'bank_update_section',
         'bank_validate',
       ])
 
@@ -47,6 +50,7 @@ describe('stdio server', () => {
         'record-adr',
         'review-inbox',
         'route-then-read',
+        'session-start',
       ])
 
       const routed = await client.callTool({ name: 'bank_route', arguments: { question: 'filter thresholds' } })

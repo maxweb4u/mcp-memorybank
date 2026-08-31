@@ -175,15 +175,66 @@ export function hasCyrillic(text: string): boolean {
   return CYRILLIC.test(text)
 }
 
-const RU_TO_EN = new Map<string, string[]>()
-const EN_TO_RU = new Map<string, string[]>()
-for (const [ru, ...en] of DICTIONARY) {
-  RU_TO_EN.set(ru, [...(RU_TO_EN.get(ru) ?? []), ...en])
-  for (const word of en) EN_TO_RU.set(word, [...(EN_TO_RU.get(word) ?? []), ru])
+let RU_TO_EN = new Map<string, string[]>()
+let EN_TO_RU = new Map<string, string[]>()
+/** Dictionary keys longest first, so `фильтр` wins over a shorter key that also prefixes the word. */
+let RU_KEYS: string[] = []
+
+function build(extra: readonly Entry[]): void {
+  RU_TO_EN = new Map()
+  EN_TO_RU = new Map()
+  for (const [ru, ...en] of [...DICTIONARY, ...extra]) {
+    RU_TO_EN.set(ru, [...(RU_TO_EN.get(ru) ?? []), ...en])
+    for (const word of en) EN_TO_RU.set(word, [...(EN_TO_RU.get(word) ?? []), ru])
+  }
+  RU_KEYS = [...RU_TO_EN.keys()].sort((a, b) => b.length - a.length)
+}
+build([])
+
+/**
+ * Terms this bank adds, from an optional `dna/vocabulary.md`.
+ *
+ * The built-in dictionary was drawn from the most frequent terms across a body of real banks, and it
+ * carries their subject matter — agents, deployment, frontend, backend. Point the server at a
+ * project about parsing books and the Russian side goes silent on `корпус`, `книга`, `прогон`: not a
+ * poor answer, an empty one, while the same question in English lands three ways out of three. The
+ * English side never has this problem because it is read from the bank itself; the Russian side
+ * cannot be, since the bank is English by governance rule. So the owner writes it down.
+ */
+export function setLocalVocabulary(entries: readonly (readonly string[])[]): number {
+  const extra: Entry[] = []
+  for (const row of entries) {
+    const [ru, ...en] = row
+    if (!ru || !hasCyrillic(ru) || en.length === 0) continue
+    extra.push([ru.toLowerCase(), ...en.map((w) => w.toLowerCase())] as unknown as Entry)
+  }
+  build(extra)
+  return extra.length
 }
 
-/** Dictionary keys longest first, so `фильтр` wins over a shorter key that also prefixes the word. */
-const RU_KEYS = [...RU_TO_EN.keys()].sort((a, b) => b.length - a.length)
+/**
+ * Reads `| корпус | corpus, collection |` rows out of a markdown table. Anything that is not a
+ * two-column row with a Cyrillic left side is ignored, so the file can carry prose and a heading
+ * around the table without a parser for either.
+ */
+export function parseVocabulary(markdown: string): string[][] {
+  const rows: string[][] = []
+  for (const line of markdown.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('|') || /^\|[\s:|-]+\|$/.test(trimmed)) continue
+    const cells = trimmed.slice(1, trimmed.endsWith('|') ? -1 : undefined).split('|').map((c) => c.trim())
+    if (cells.length < 2) continue
+    const ru = (cells[0] ?? '').replace(/`/g, '').trim()
+    const en = (cells[1] ?? '')
+      .replace(/`/g, '')
+      .split(',')
+      .map((w) => w.trim())
+      .filter((w) => /^[a-z][a-z0-9_-]*$/i.test(w))
+    if (!hasCyrillic(ru) || en.length === 0) continue
+    rows.push([ru, ...en])
+  }
+  return rows
+}
 
 /**
  * Russian builds verbs by prefix as readily as by ending: `задеплоить` is `деплой` with both ends

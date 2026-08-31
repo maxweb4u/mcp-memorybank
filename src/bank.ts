@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { BankDoc, Contract, IndexLink } from './types.js'
 import { extractLinks, parseDoc } from './parse.js'
 import { parseContract } from './contract.js'
+import { parseVocabulary, setLocalVocabulary } from './lang.js'
 
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist', '.obsidian'])
 
@@ -46,6 +47,8 @@ export class Bank {
   /** Every markdown link found inside index documents. */
   indexLinks: IndexLink[] = []
   lastRefresh = 0
+  /** How many terms `dna/vocabulary.md` contributed; 0 when the bank has no such file. */
+  localVocabulary = 0
 
   constructor(root: string) {
     this.root = path.resolve(root)
@@ -97,7 +100,13 @@ export class Bank {
       }
     }
 
-    if (dirty || this.lastRefresh === 0) await this.rebuild()
+    if (dirty || this.lastRefresh === 0) {
+      await this.rebuild()
+      // The bank may teach the query layer its own words. Re-read on every rebuild, so editing the
+      // file takes effect without restarting the server.
+      const vocabulary = this.raws.get('dna/vocabulary.md')
+      this.localVocabulary = setLocalVocabulary(vocabulary ? parseVocabulary(vocabulary) : [])
+    }
     this.lastRefresh = Date.now()
     return { added, changed, removed, durationMs: Date.now() - started }
   }

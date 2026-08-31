@@ -15,6 +15,12 @@ export interface CreateInput {
   canonicalFor?: string[]
   mustNotDefine?: string[]
   status?: string
+  /**
+   * The document body, below the title. Measured need: without it `bank_create` writes frontmatter,
+   * template and index registration, and every word of prose arrives some other way — over one
+   * working session, nine governed creations against six shell writes into the same bank.
+   */
+  body?: string
   /** Extra frontmatter fields, appended after the governed ones. */
   extra?: Record<string, unknown>
   /** Route into the quarantine directory instead of the canonical layers. */
@@ -178,8 +184,16 @@ export function registerLine(indexRaw: string, indexPath: string, docPath: strin
     if (LINK_LINE.test(lines[i]!)) last = i
   }
 
+  // A section index says it is empty until something is registered in it. bank_init writes that
+  // line; nothing used to clear it, so an index could carry entries under a claim of emptiness.
+  const placeholder = lines.findIndex((l) => /^Empty\. A first document of this kind is registered here\.$/.test(l.trim()))
+  if (placeholder !== -1) {
+    lines.splice(placeholder, lines[placeholder + 1]?.trim() === '' ? 2 : 1)
+    if (last > placeholder) last -= 1
+  }
+
   if (last === -1) {
-    const trimmed = indexRaw.trimEnd()
+    const trimmed = lines.join('\n').trimEnd()
     return `${trimmed}\n\n- [${title}](${relative}) — ${purpose}\n`
   }
 
@@ -324,6 +338,13 @@ export async function create(bank: Bank, input: CreateInput): Promise<CreateResu
     warnings.push(`No template matched doc_kind "${input.docKind}"; wrote a minimal document instead.`)
   }
 
+  if (input.body?.trim()) {
+    // The author's prose replaces the template's prompts rather than following them: a document
+    // carrying both reads as half-filled, and the template's headings are guidance, not content.
+    body = `# ${input.title}\n\n${input.body.trim()}\n`
+    if (template) warnings.push(`Body supplied, so the prose of ${template.path} was not used.`)
+  }
+
   const frontmatter: Record<string, unknown> = {
     title: input.title,
     doc_kind: input.docKind,
@@ -433,6 +454,37 @@ export function inbox(bank: Bank, now = Date.now()): InboxEntry[] {
  * kept as written; the frontmatter is rebuilt against the contract, and the destination template
  * contributes only its governance fields. The source is removed, so nothing is owned twice.
  */
+
+/**
+ * Rewrites the body's relative markdown links so they still resolve after the document moves.
+ *
+ * `bank_promote` keeps the captured body as written, deliberately — but "as written" includes paths
+ * that only made sense from `_inbox/`. Measured: a note linking `../processes/rule.md` kept saying
+ * that after landing in `processes/`, where the link is the bare filename, and validation does not
+ * catch it because the rule for unresolved references only fires on prose that claims a rule.
+ *
+ * Absolute paths, URLs and anchors are left exactly as they are; so is any target that does not
+ * resolve inside the bank, since guessing at a broken link is worse than moving it unchanged.
+ */
+function relinkBody(body: string, fromPath: string, toPath: string, bank: Bank): { body: string; rewritten: string[] } {
+  const fromDir = path.posix.dirname(fromPath)
+  const toDir = path.posix.dirname(toPath)
+  if (fromDir === toDir) return { body, rewritten: [] }
+
+  const rewritten: string[] = []
+  const next = body.replace(/\]\(([^)\s]+\.md)((?:#[^)\s]*)?)\)/g, (whole, target: string, anchor: string) => {
+    if (/^(https?:|\/|#)/.test(target)) return whole
+    const resolved = path.posix.normalize(path.posix.join(fromDir, target))
+    if (resolved.startsWith('..') || !bank.get(resolved)) return whole
+    let updated = path.posix.relative(toDir, resolved)
+    if (!updated.startsWith('.')) updated = updated.includes('/') ? updated : `./${updated}`.slice(2)
+    if (updated === target) return whole
+    rewritten.push(`${target} -> ${updated}`)
+    return `](${updated}${anchor})`
+  })
+  return { body: next, rewritten }
+}
+
 export async function promote(bank: Bank, input: PromoteInput): Promise<PromoteResult> {
   const from = normalise(input.path)
   const source = bank.get(from)
@@ -466,7 +518,10 @@ export async function promote(bank: Bank, input: PromoteInput): Promise<PromoteR
   }
 
   const sourceRaw = bank.raw(from) ?? ''
-  const body = retitle(splitFrontmatter(sourceRaw).body.trim() || `# ${title}`, title)
+  const captured = retitle(splitFrontmatter(sourceRaw).body.trim() || `# ${title}`, title)
+  const relinked = relinkBody(captured, from, target, bank)
+  const body = relinked.body
+  for (const change of relinked.rewritten) warnings.push(`Link rewritten for the new location: ${change}`)
 
   const frontmatter: Record<string, unknown> = {
     title,
@@ -508,5 +563,63 @@ export async function promote(bank: Bank, input: PromoteInput): Promise<PromoteR
     registeredIn,
     warnings,
     preview: contents.split('\n').slice(0, 40).join('\n'),
+  }
+}
+
+export interface DiscardInput {
+  /** The quarantined document to drop, e.g. `_inbox/note.md`. */
+  path: string
+  /** Why it is not worth keeping. Required, so a discard is never silent. */
+  reason: string
+  dryRun?: boolean
+}
+
+export interface DiscardResult {
+  path: string
+  title: string
+  purpose: string
+  reason: string
+  discarded: boolean
+  dryRun: boolean
+  bytes: number
+}
+
+/**
+ * Drops a captured note that is not worth keeping.
+ *
+ * The `review-inbox` prompt offers three outcomes for every note — promote it, fold it into the
+ * document that already owns the fact, or drop it as transient — and the server implemented two.
+ * Measured in a live review: the agent folded one note into an existing document with
+ * `bank_update_section`, then reached for `rm` in a shell to clear the note it had just consumed,
+ * because nothing else could. A tool that names three outcomes and supports two sends the third
+ * outside every gate it has.
+ *
+ * Deliberately narrow: `_inbox/` only, never a document that is part of the bank proper. Deleting
+ * canonical documents is not something this server should learn to do.
+ */
+export async function discard(bank: Bank, input: DiscardInput): Promise<DiscardResult> {
+  const from = normalise(input.path)
+  const source = bank.get(from)
+  if (!source) fail(`Not a document of this bank: ${input.path}`)
+  if (source.layer !== 'inbox') {
+    fail(
+      `Only quarantined documents can be discarded; ${from} is not in ${INBOX}/. ` +
+        'Documents in the bank proper are removed by hand, deliberately.',
+    )
+  }
+  if (!input.reason?.trim()) {
+    fail('`reason` is required: a note is dropped on the record, or not at all.')
+  }
+
+  if (!input.dryRun) await fs.rm(bank.abs(from), { force: true })
+
+  return {
+    path: from,
+    title: source.title,
+    purpose: source.purpose,
+    reason: input.reason.trim(),
+    discarded: !input.dryRun,
+    dryRun: Boolean(input.dryRun),
+    bytes: source.bytes,
   }
 }

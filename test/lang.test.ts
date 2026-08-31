@@ -1,10 +1,10 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Bank } from '../src/bank.js'
 import { route } from '../src/route.js'
 import { SearchIndex, search, searchTokens } from '../src/search.js'
-import { expandTerms, hasCyrillic, stemOf, termFor, WHY_INTENT } from '../src/lang.js'
+import { WHY_INTENT, expandTerms, hasCyrillic, parseVocabulary, setLocalVocabulary, stemOf, termFor } from '../src/lang.js'
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixture-bank')
 let bank: Bank
@@ -118,5 +118,47 @@ describe('search across languages', () => {
     const hits = search(bank, index, 'filter_thresholds', { limit: 5 }).map((h) => h.path)
     expect(hits).toContain('domain/rules.md')
     expect(hits).toContain('conflict.md')
+  })
+})
+
+describe('vocabulary the bank adds itself', () => {
+  afterEach(() => {
+    setLocalVocabulary([])
+  })
+
+  it('reads two-column rows and ignores everything else', () => {
+    const rows = parseVocabulary([
+      '# Vocabulary',
+      '',
+      'Words this project uses that the built-in dictionary does not.',
+      '',
+      '| Russian | English |',
+      '|---|---|',
+      '| корпус | corpus, collection |',
+      '| `книг` | book, books |',
+      '| прогон | run |',
+      '| skipped | because the left side is not Cyrillic |',
+      '| стол |  |',
+    ].join('\n'))
+    expect(rows).toEqual([
+      ['корпус', 'corpus', 'collection'],
+      ['книг', 'book', 'books'],
+      ['прогон', 'run'],
+    ])
+  })
+
+  it('teaches a word the built-in dictionary does not know', () => {
+    expect(termFor('корпус').translations).toEqual([])
+    setLocalVocabulary([['корпус', 'corpus', 'collection']])
+    expect(termFor('корпуса').translations).toEqual(['corpus', 'collection'])
+    expect(stemOf('корпусом')).toBe('корпус')
+  })
+
+  it('leaves the built-in dictionary intact, and restores it when cleared', () => {
+    setLocalVocabulary([['корпус', 'corpus']])
+    expect(termFor('банка').translations).toContain('bank')
+    setLocalVocabulary([])
+    expect(termFor('корпус').translations).toEqual([])
+    expect(termFor('банка').translations).toContain('bank')
   })
 })

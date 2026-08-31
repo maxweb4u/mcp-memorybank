@@ -4,13 +4,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import type { Bank } from './bank.js'
 import { route } from './route.js'
-import { read } from './read.js'
+import { read, readMany } from './read.js'
 import { RULES, validate } from './validate.js'
 import { graph } from './graph.js'
 import { SearchIndex, search } from './search.js'
 import { changed } from './changed.js'
-import { create, inbox, promote } from './create.js'
+import { create, discard, inbox, promote } from './create.js'
 import { init } from './init.js'
+import { edit, updateSection } from './update.js'
 
 const LAYERS = ['dna', 'knowledge', 'decision', 'delivery', 'flow', 'other'] as const
 
@@ -69,20 +70,35 @@ export async function startServer(bank: Bank): Promise<void> {
   server.registerTool(
     'bank_read',
     {
-      title: 'Read a bank document',
+      title: 'Read bank documents',
       description:
-        'Reads one document by its bank-relative path, optionally a single level-two section of it. ' +
-        'Section reads matter: canonical documents in real banks reach 190 KB. ' +
-        'Returns parsed frontmatter alongside the body.',
+        'Reads one document, or several in a single call, by bank-relative path — optionally a ' +
+        'single level-two section of each. Pass an array whenever you need more than one: reading ' +
+        'a handful of documents is one call, not one call each, and there is never a reason to ' +
+        'shell out to cat instead. Section reads matter: canonical documents in real banks reach ' +
+        '190 KB. Returns parsed frontmatter alongside the body. A path that does not resolve is ' +
+        'reported under failed without sinking the rest of the batch. A batch has a byte budget, spent in the order asked; whatever it does not reach comes back under skipped with its section list, so ask for those by section rather than repeating the whole read.',
       inputSchema: {
-        path: z.string().describe('Bank-relative path, e.g. "domain/rules.md"'),
+        path: z
+          .union([z.string(), z.array(z.union([z.string(), z.object({ path: z.string(), section: z.string().optional() })]))])
+          .describe('One bank-relative path, or an array of paths (each optionally {path, section})'),
         section: z.string().optional().describe('Level-two heading to return instead of the whole body'),
+        maxBytes: z
+          .number()
+          .int()
+          .min(1000)
+          .optional()
+          .describe('Budget for a multi-path read, spent in the order asked; default 60000'),
       },
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ path: docPath, section }) => {
+    async ({ path: docPath, section, maxBytes }) => {
       await bank.refresh()
       try {
+        if (Array.isArray(docPath)) {
+          const requests = docPath.map((r) => (typeof r === 'string' ? { path: r, section } : r))
+          return json(await readMany(bank, requests, { maxBytes }))
+        }
         return json(await read(bank, docPath, section))
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
@@ -136,6 +152,10 @@ export async function startServer(bank: Bank): Promise<void> {
         canonicalFor: z.array(z.string()).optional().describe('Fact keys this document will own'),
         mustNotDefine: z.array(z.string()).optional().describe('Fact keys this document must not define'),
         status: z.string().optional().describe('Publication status (default draft)'),
+        body: z
+          .string()
+          .optional()
+          .describe('The document body below the title. Supply it here rather than writing the file afterwards'),
         extra: z.record(z.string(), z.unknown()).optional().describe('Additional frontmatter fields'),
         inbox: z.boolean().optional().describe('Write to the _inbox/ quarantine instead of a canonical layer'),
         dryRun: z.boolean().optional().describe('Report what would happen without writing anything'),
@@ -146,6 +166,69 @@ export async function startServer(bank: Bank): Promise<void> {
       await bank.refresh()
       try {
         return json(await create(bank, input))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  server.registerTool(
+    'bank_edit',
+    {
+      title: 'Replace one exact fragment of a document',
+      description:
+        'Replaces an exact piece of text in a document body — a table row, two steps of a plan, a ' +
+        'paragraph, a heading. Use this for anything smaller than a whole section, which is most ' +
+        'edits; use bank_update_section when writing a section from nothing. The match must be ' +
+        'unique: zero or several occurrences are refused with the count rather than guessed at, ' +
+        'and section narrows the search when the same words appear twice. Renaming a heading is ' +
+        'an ordinary edit here. The frontmatter is out of reach: the search runs on the body.',
+      inputSchema: {
+        path: z.string().describe('Bank-relative path of an existing document'),
+        find: z.string().min(1).describe('Exact text to replace, whitespace included'),
+        replace: z.string().describe('What to put in its place'),
+        section: z.string().optional().describe('Restrict the search to one level-two section'),
+        dryRun: z.boolean().optional().describe('Report what would change without writing'),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: false },
+    },
+    async (input) => {
+      await bank.refresh()
+      try {
+        return json(await edit(bank, input))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  server.registerTool(
+    'bank_update_section',
+    {
+      title: 'Write one named section of an existing document',
+      description:
+        'Writes the body of one level-two section, leaving the frontmatter, the title and every ' +
+        'other section untouched. This is how a seeded draft gets filled — bank_init writes ' +
+        'product/context.md and engineering/testing-policy.md as placeholders, and bank_create ' +
+        'refuses an occupied path — and how prose reaches a document created from a template. ' +
+        'A section that does not exist is refused with the list of the real ones rather than ' +
+        'appended. Templates and quarantined notes are refused outright.',
+      inputSchema: {
+        path: z.string().describe('Bank-relative path of an existing document'),
+        section: z.string().describe('Level-two heading whose body is being written'),
+        content: z.string().min(1).describe('Markdown to put under that heading'),
+        mode: z
+          .enum(['replace', 'append'])
+          .optional()
+          .describe('replace overwrites the section body (default), append adds to the end of it'),
+        dryRun: z.boolean().optional().describe('Report what would change without writing'),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: false },
+    },
+    async (input) => {
+      await bank.refresh()
+      try {
+        return json(await updateSection(bank, input))
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }
@@ -179,6 +262,33 @@ export async function startServer(bank: Bank): Promise<void> {
       await bank.refresh()
       try {
         return json(await promote(bank, input))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  server.registerTool(
+    'bank_discard',
+    {
+      title: 'Drop a captured note that is not worth keeping',
+      description:
+        'Deletes one document from _inbox/, and nothing else — the third outcome of an inbox ' +
+        'review, alongside bank_promote and folding a note into its owner with ' +
+        'bank_update_section. A reason is required, so a note is dropped on the record rather ' +
+        'than silently. Refuses any path outside _inbox/: documents in the bank proper are ' +
+        'removed by hand, deliberately.',
+      inputSchema: {
+        path: z.string().describe('Quarantined document, e.g. "_inbox/note.md"'),
+        reason: z.string().min(1).describe('Why it is not worth keeping — recorded in the result'),
+        dryRun: z.boolean().optional().describe('Report what would go without deleting it'),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    },
+    async (input) => {
+      await bank.refresh()
+      try {
+        return json(await discard(bank, input))
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }
@@ -416,6 +526,46 @@ export async function startServer(bank: Bank): Promise<void> {
   )
 
   server.registerPrompt(
+    'session-start',
+    {
+      title: 'Open a session on this bank',
+      description:
+        'What is this project, where did it stop, what is open — answered from the index and the ' +
+        'delta rather than by reading everything.',
+      argsSchema: {
+        since: z
+          .string()
+          .optional()
+          .describe('Git ref or ISO date to compare against; defaults to the last week of commits'),
+      },
+    },
+    ({ since }) => ({
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text:
+              'Bring me up to date on this project from its memory bank.\n\n' +
+              'Procedure: read memorybank://index for what exists and what each document is for, ' +
+              `then call bank_changed with since "${since ?? 'HEAD~20'}" for what has moved lately. ` +
+              'Read documents only where the index leaves the answer genuinely unclear, and read ' +
+              'them with bank_read — several paths in one call, sections where you can. Do not cat ' +
+              'the bank: the index carries every purpose line already.\n\n' +
+              'Then tell me, in this order: what the project is, in two sentences; what is in ' +
+              'flight, with the delivery documents that carry it; what decisions were taken most ' +
+              'recently; and what is open — questions recorded in the bank, drafts that never ' +
+              'became active, and anything the index promises that does not exist. Be specific ' +
+              'about what you did not read, so I can tell the difference between "nothing there" ' +
+              'and "did not look".',
+          },
+        },
+      ],
+    }),
+  )
+
+
+  server.registerPrompt(
     'route-then-read',
     {
       title: 'Route before reading',
@@ -512,11 +662,13 @@ export async function startServer(bank: Bank): Promise<void> {
             text:
               'Read memorybank://inbox and take me through what is waiting there.\n\n' +
               'For each note: say in one line what it claims, then bank_route its topic to find who already ' +
-              'owns that fact. Recommend one of three outcomes — promote it as a new document, fold it into ' +
-              'the existing owner by hand, or drop it as transient. Prefer folding over promoting: a new ' +
-              'document is only right when no existing owner covers the fact. For anything you recommend ' +
-              'promoting, give the exact bank_promote call with a destination and derived_from, and run it ' +
-              'with dryRun first. Do not promote or delete anything until I say which ones.',
+              'owns that fact. Recommend one of three outcomes, each of which has a tool: promote it as a ' +
+              'new document with bank_promote, fold it into the existing owner with bank_update_section, ' +
+              'or drop it as transient with bank_discard. Prefer folding over promoting: a new document ' +
+              'is only right when no existing owner covers the fact, and a note folded in is a note to ' +
+              'discard afterwards, with the destination as the reason. Give the exact call for whatever ' +
+              'you recommend and run it with dryRun first. Do not promote, fold or discard anything until ' +
+              'I say which ones.',
           },
         },
       ],

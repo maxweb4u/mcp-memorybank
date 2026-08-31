@@ -36,7 +36,8 @@ export const LAYER_WEIGHT: Record<Layer, number> = {
   flow: 1.0,
   other: 1.0,
   delivery: 0.6,
-  // Quarantine: written automatically, reviewed later. Visible to routing, never competitive with it.
+  // Quarantine: excluded from routing and search outright, so this weight only ever applies if a
+  // caller reaches a note some other way. Kept low rather than removed, to fail quiet if it does.
   inbox: 0.2,
 }
 

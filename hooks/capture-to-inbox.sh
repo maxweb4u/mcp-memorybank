@@ -82,7 +82,13 @@ Never promote out of _inbox on your own — that is a review step for a human.
 TEXT
 )
 
-# Stop takes its decision fields at the top level: `continue` keeps the turn alive and `instruction`
-# is what the agent is shown. `hookSpecificOutput` is explicitly not read for this event.
-jq -n --arg r "${reason}${remind}" '{continue: true, instruction: $r}'
+# Two shapes, because the documentation and the installed client disagree and the observable one wins.
+# `decision: "block"` with a `reason` is what actually reaches the agent: measured over three firings
+# in one session, `{continue: true, instruction: ...}` alone was accepted (exit 0, hook_success) and
+# injected nothing — the client recorded `content: ""` and the turn ended. `continue: true` reads to
+# it as "yes, stopping is fine", which is the opposite of the intent. `instruction` is kept for
+# clients that do read it. The recursion guard on `stop_hook_active` at the top is what makes
+# blocking safe.
+jq -n --arg r "${reason}${remind}" \
+  '{decision: "block", reason: $r, continue: true, instruction: $r}'
 exit 0
