@@ -1,22 +1,36 @@
 # Capturing to `_inbox` at the end of a session
 
-`capture-to-inbox.sh` is a Stop hook: after a session in which work actually happened, it asks the
-agent once to write down, into the bank's quarantine, whatever is worth remembering. The agent does
-that through `bank_create` with `inbox: true`; nothing reaches a canonical layer without your
-decision.
+`capture-to-inbox.sh` is a Stop hook: once work has actually happened, it asks the agent to write
+down, into the bank's quarantine, whatever is worth remembering. The agent does that through
+`bank_create` with `inbox: true`; nothing reaches a canonical layer without your decision.
 
 ## When it stays quiet
 
-The hook deliberately does nothing unless all four conditions hold:
+The hook does nothing unless all four conditions hold:
 
 | Condition | Why |
 |---|---|
 | `stop_hook_active` is not `true` | recursion guard: a second pass must not block the stop again |
 | the project has a `memory_bank/` | otherwise there is nowhere to write |
 | the working tree is dirty | an "asked and left" session produces nothing durable |
-| the session marker is not set yet | one prompt per session, not per turn |
+| the tree has moved since the last ask, and the cooldown has passed | otherwise it would ask on every turn |
 
-The marker is a file at `$TMPDIR/memorybank-capture-<session_id>`.
+## Why not simply once per session
+
+Because `Stop` fires at the end of every turn, and a one-shot marker therefore lands on the *first*
+one — which is orientation, not decision. Measured in a real session: the hook fired four minutes in,
+the agent correctly had nothing durable to record, and the nine architecture decisions taken an hour
+later were never asked about. A guard against nagging had turned into a guarantee of asking at the
+least informed moment available.
+
+So the marker — `$TMPDIR/memorybank-capture-<session_id>` — holds the time of the last ask and a
+fingerprint of the working tree, and the hook asks again when the tree has moved on and
+`MEMORYBANK_CAPTURE_COOLDOWN_MIN` (default 30) minutes have passed. Typically once or twice in an
+afternoon, on turns where something was actually produced.
+
+The fingerprint hashes the contents of the dirty files, not just their paths: an untracked file reads
+as `?? path` no matter how many times it is rewritten, and rewriting the same handful of files is
+precisely what a working session does.
 
 ## Reminding you the queue has grown
 

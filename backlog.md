@@ -81,15 +81,25 @@ from nothing. Detailed plan and criteria — [field-test.md](field-test.md).
 **Done when:** the six numbers from the "What counts as a result" section are collected over a day of
 work.
 
-### A-05. Verify the Stop hook actually loads
+### A-05. Verify the Stop hook actually loads — **done**
 
-The logic of `hooks/capture-to-inbox.sh` has been checked across all four branches and the config
-schema comes from the official documentation, but **Claude Code actually loading the hook is not
-confirmed**: in the development sandbox, 0 hooks registered both from `.claude/settings.json` and via
-`--settings` (which looks like an untrusted directory).
+The logic had been checked across all four branches and the config schema came from the official
+documentation, yet 0 hooks registered. That was read as an untrusted-directory problem. It was not:
+two defects sat on a path nobody had ever executed.
 
-**Done when:** `/hooks` in an interactive session of a trusted project shows the hook, and one real
-session actually leaves a note in `_inbox/`.
+The documented config was flat — `"Stop": [{ "type": "command", … }]` — where a wrapping object with
+an inner `hooks` array is required; a flat entry registers nothing and reports no error. And the
+script returned `hookSpecificOutput`, which `Stop` does not read at all: its decision fields go at the
+top level, `continue` to keep the turn alive and `instruction` for what the agent is shown.
+
+**Done.** With both fixed, a live session carries `hook_success`, `hookEvent: Stop`, `exitCode 0` and
+the payload. The hook loads and fires.
+
+A third defect only a live session could show: asking once per session meant asking at the *first*
+stop, which is orientation rather than decision. It fired four minutes in, the agent correctly had
+nothing to record, and the nine decisions taken an hour later were never asked about. The marker now
+carries a fingerprint of the working tree and the time of the last ask, so the question returns once
+the tree has moved and a cooldown has passed.
 
 ## B. Server code — all of it optional
 

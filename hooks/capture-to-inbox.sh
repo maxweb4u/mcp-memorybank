@@ -6,7 +6,14 @@
 #   1. this is not a re-entry from another Stop hook   (stop_hook_active)
 #   2. the project actually has a memory_bank
 #   3. the working tree changed, so something happened  (a read-only session captures nothing)
-#   4. this session has not been asked already          (one marker per session id)
+#   4. it has not asked recently about this same state  (see below)
+#
+# On (4): asking once per session sounds right and is not. `Stop` fires at the end of every turn, so
+# a one-shot marker lands on the FIRST turn — which is usually reading and orientation, before the
+# session has decided anything. Measured in a real session: the hook fired four minutes in, the agent
+# correctly had nothing to record, and the nine decisions that followed an hour later were never
+# asked about. So the marker holds the working tree's fingerprint and the time of the last ask, and
+# the hook asks again once the tree has moved on and a cooldown has passed.
 #
 # When the quarantine has grown past MEMORYBANK_INBOX_LIMIT notes, or the oldest has been waiting
 # more than MEMORYBANK_INBOX_STALE_DAYS, it also asks the agent to say so out loud. A queue nobody
@@ -26,9 +33,27 @@ session=$(field '.session_id')
 git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 [ -n "$(git -C "$cwd" status --porcelain 2>/dev/null)" ] || exit 0
 
+# Fingerprint of what is uncommitted right now. The porcelain lines alone are not enough: an
+# untracked file reads as `?? path` however many times it is rewritten, and rewriting the same files
+# is exactly what a working session does. So the contents of the dirty files are hashed too.
+fingerprint=$(
+  {
+    git -C "$cwd" status --porcelain 2>/dev/null
+    git -C "$cwd" status --porcelain 2>/dev/null | awk '{print $NF}' | while read -r f; do
+      [ -f "$cwd/$f" ] && shasum "$cwd/$f" 2>/dev/null
+    done
+  } | shasum | cut -c1-12
+)
+cooldown_min="${MEMORYBANK_CAPTURE_COOLDOWN_MIN:-30}"
+now=$(date +%s)
+
 marker="${TMPDIR:-/tmp}/memorybank-capture-${session:-unknown}"
-[ -e "$marker" ] && exit 0
-: > "$marker"
+if [ -e "$marker" ]; then
+  read -r last_time last_print < "$marker" 2>/dev/null || { last_time=0; last_print=""; }
+  [ "$fingerprint" = "$last_print" ] && exit 0
+  [ $(( (now - ${last_time:-0}) / 60 )) -lt "$cooldown_min" ] && exit 0
+fi
+printf '%s %s\n' "$now" "$fingerprint" > "$marker"
 
 inbox="$cwd/memory_bank/_inbox"
 limit="${MEMORYBANK_INBOX_LIMIT:-8}"

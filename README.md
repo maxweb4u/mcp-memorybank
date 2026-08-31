@@ -138,6 +138,30 @@ Wiring it into a project:
 }
 ```
 
+### Telling the agent to use it
+
+Wiring the server in makes the tools available; it does not make an agent reach for them. Left to
+itself a model will often open `README.md` and walk the section indexes, because that is what it does
+everywhere else — which is the exact walk this server exists to remove.
+
+Four lines in the project's `CLAUDE.md` settle it:
+
+```markdown
+# Memory bank
+
+- Answer questions about the project through `bank_route` first. Do not open `README.md` or a
+  section index to find a path. Read only what it returns, and prefer `bank_read` with a `section`.
+- Create documents only through `bank_create`. A refusal — a taken path, a `canonical_for` already
+  owned, a `derived_from` that does not resolve — is information; report it rather than writing the
+  file by hand instead.
+- Run `bank_validate` before committing changes to the bank.
+- Never promote anything out of `_inbox/` on your own. That is a review step for a human.
+```
+
+The second line is the one that pays. Without it an agent that hits a refusal tends to treat it as an
+obstacle and write the file directly — which is how a bank acquires a second owner of a fact, or a
+document that no index links to.
+
 ## Debugging from the terminal
 
 ```bash

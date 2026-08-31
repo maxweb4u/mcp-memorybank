@@ -30,7 +30,8 @@ export async function startServer(bank: Bank): Promise<void> {
       instructions:
         'Navigation and governance over a memory_bank knowledge base. ' +
         'Start every session by reading memorybank://index, then call bank_route before reading any file. ' +
-        'Bank documents are written in English, so route with English terms even when the conversation is not.',
+        'Bank documents are written in English, but the question need not be: the server expands a Russian ' +
+        'query into the English terms the documents use. Pass the question as the user asked it.',
     },
   )
 
@@ -41,10 +42,11 @@ export async function startServer(bank: Bank): Promise<void> {
       description:
         'Answers "what should I read about this". Ranks documents by their hand-written frontmatter ' +
         '(canonical_for, purpose, title, section headings) — not by body text — and returns paths with the reason each matched. ' +
-        'Templates are never returned. Use English terms: bank documents are English-only. ' +
+        'Templates are never returned. Ask in whatever language the user did — bank documents are English, ' +
+        'and the server translates the query rather than making you do it. ' +
         'Use this instead of reading README.md and walking section indexes.',
       inputSchema: {
-        question: z.string().min(2).describe('What you need to know, in English'),
+        question: z.string().min(2).describe('What you need to know, in the words it was asked in'),
         limit: z.number().int().min(1).max(25).optional().describe('How many documents to return (default 5)'),
         docKind: z.string().optional().describe('Restrict to one doc_kind, e.g. "adr"'),
         layer: z.enum(LAYERS).optional().describe('Restrict to one knowledge layer'),
