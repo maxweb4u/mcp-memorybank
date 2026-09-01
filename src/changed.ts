@@ -33,6 +33,9 @@ export interface ChangedResult {
 
 const ISO_LIKE = /^\d{4}-\d{2}-\d{2}([T ]|$)/
 
+/** A ref that walks back from a starting point, such as `HEAD~20` or `main^^`. */
+const WALKING_REF = /^(.*?)(?:~(\d+)|\^+)$/
+
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await run('git', args, { cwd, maxBuffer: 8 * 1024 * 1024 })
   return stdout
@@ -139,13 +142,47 @@ export async function changed(bank: Bank, since: string): Promise<ChangedResult>
 
   if (!ISO_LIKE.test(trimmed)) {
     const repo = await repoRoot(bank.root)
-    if (!repo) throw new Error(`This bank is not inside a git repository, so "${trimmed}" cannot be resolved. Pass an ISO date instead.`)
-    try {
-      await git(repo, ['rev-parse', '--verify', `${trimmed}^{commit}`])
-    } catch {
-      throw new Error(`"${trimmed}" is not a commit in ${repo}. Pass a valid ref or an ISO date.`)
+    if (!repo) {
+      // A bank with no history at all is the limiting case of the young-repository fallback below:
+      // walking back from HEAD lands on the beginning, and here the beginning is everything there
+      // is. `session-start` asks for HEAD~20 by name, so a project that has not been committed yet
+      // would otherwise fail on its first step. A ref that names something specific still fails —
+      // there is nothing it could mean.
+      if (!WALKING_REF.test(trimmed)) {
+        throw new Error(
+          `This bank is not inside a git repository, so "${trimmed}" cannot be resolved. Pass an ISO date instead.`,
+        )
+      }
+      const all = fromMtime(bank, new Date(0).toISOString())
+      return {
+        ...all,
+        since: trimmed,
+        note:
+          `This bank is not in a git repository, so "${trimmed}" has no commit to reach back to and ` +
+          'every document is listed as present. Commit the bank, or pass an ISO date, for a real delta.',
+      }
     }
-    return fromGit(bank, trimmed, repo)
+    let ref = trimmed
+    let note: string | undefined
+    try {
+      await git(repo, ['rev-parse', '--verify', `${ref}^{commit}`])
+    } catch {
+      // `HEAD~20` in a repository with eight commits is a young repository, not a bad question —
+      // and it is what the session-start procedure asks for by default. Walking off the end of
+      // history should land on the beginning of it. A ref that names nothing at all still fails.
+      const walk = WALKING_REF.exec(ref)
+      const root = walk ? await git(repo, ['rev-list', '--max-parents=0', walk[1] || 'HEAD']).catch(() => '') : ''
+      const first = root.split('\n').filter(Boolean).pop()
+      if (!first) {
+        throw new Error(`"${trimmed}" is not a commit in ${repo}. Pass a valid ref or an ISO date.`)
+      }
+      ref = first
+      note =
+        `"${trimmed}" reaches past the start of this repository, so the delta is measured from its ` +
+        `first commit (${first.slice(0, 8)}) instead.`
+    }
+    const result = await fromGit(bank, ref, repo)
+    return note ? { ...result, since: trimmed, note: result.note ? `${note} ${result.note}` : note } : result
   }
 
   return fromMtime(bank, trimmed)

@@ -350,6 +350,37 @@ describe('a batch read that does not overflow the caller', () => {
     expect(result.budgetBytes).toBe(2000)
   })
 
+  it('refuses to be handed a budget above its ceiling, and says so', async () => {
+    const result = await readMany(
+      bank,
+      ['product/context.md', 'engineering/testing-policy.md', 'domain/model.md'],
+      { maxBytes: 200_000 },
+    )
+    expect(result.budgetBytes).toBe(40_000)
+    expect(result.note).toContain('above the ceiling')
+    expect(result.note).toContain('200000')
+  })
+
+  it('leaves a document unread when its size would overshoot, rather than after it already has', async () => {
+    // A tight budget the first document nearly fills: the second must not be read whole on the
+    // grounds that there was a byte left over.
+    const first = await readMany(bank, ['product/context.md'])
+    const result = await readMany(
+      bank,
+      ['product/context.md', 'engineering/testing-policy.md'],
+      { maxBytes: first.bytes + 100 },
+    )
+    expect(result.documents.map((d) => d.path)).toEqual(['product/context.md'])
+    expect(result.skipped.map((s) => s.path)).toEqual(['engineering/testing-policy.md'])
+    expect(result.bytes).toBeLessThanOrEqual(first.bytes + 100)
+  })
+
+  it('answers with the first document even when it alone exceeds the budget', async () => {
+    const result = await readMany(bank, ['product/context.md', 'domain/model.md'], { maxBytes: 1000 })
+    expect(result.documents.map((d) => d.path)).toEqual(['product/context.md'])
+    expect(result.documents[0]!.bytes).toBeGreaterThan(1000)
+  })
+
   it('hands back the sections of what it skipped, so the caller can ask for a part', async () => {
     const result = await readMany(bank, ['product/context.md', 'engineering/testing-policy.md'], { maxBytes: 1000 })
     const skipped = result.skipped[0]!

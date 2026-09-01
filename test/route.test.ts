@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Bank } from '../src/bank.js'
-import { route } from '../src/route.js'
+import { route, tokenize } from '../src/route.js'
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixture-bank')
 let bank: Bank
@@ -17,6 +17,16 @@ const paths = (question: string, limit = 5) => route(bank, question, { limit }).
 describe('route', () => {
   it('puts the canonical owner first when the question covers its key', () => {
     expect(paths('filter thresholds')[0]).toBe('domain/rules.md')
+  })
+
+  it('drops the function words that a negated or modal question is made of', () => {
+    // Field case: asked for "improvements deferred from review ... that are not defects", the router
+    // scored a document on the word `not` and ranked it third. `search.ts` had filtered `not`,
+    // `from` and `can` since the beginning; the two lists had drifted apart.
+    for (const word of ['not', 'no', 'from', 'can', 'should', 'must', 'was', 'been', 'than', 'such']) {
+      expect(tokenize(`thresholds ${word}`), `"${word}" still scores`).toEqual(['thresholds'])
+    }
+    expect(tokenize('what can be done about this, if any')).toEqual(['done'])
   })
 
   it('never returns templates, even when they match the words', () => {

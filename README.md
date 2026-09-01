@@ -188,7 +188,7 @@ node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.m
 | `bank_validate` | checks the bank against the rules the bank itself declares in `dna/` |
 | `bank_graph` | walks `derived_from`: `down` — who depends on this (blast radius), `up` — what it is built on |
 | `bank_search` | full-text search over document bodies — identifiers, names, literals |
-| `bank_changed` | what changed since a git ref or an ISO date |
+| `bank_changed` | what changed since a git ref or an ISO date; a ref older than the repository lands on its first commit, and a bank with no repository at all answers with everything |
 | `bank_init` | creates a bank from nothing: skeleton, `dna/`, templates, section indexes |
 | `bank_create` | creates a document from the bank's own template and registers it in the index, with gates and `_inbox` |
 | `bank_edit` | replaces one exact fragment of a body — a table row, a step, a heading; refuses an ambiguous match |

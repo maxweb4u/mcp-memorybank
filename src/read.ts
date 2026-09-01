@@ -88,16 +88,25 @@ export interface ReadManyResult {
   skipped: { path: string; title: string; bytes: number; availableSections: string[] }[]
   bytes: number
   budgetBytes: number
+  /** Present when the caller asked for more than the ceiling allows. */
+  note?: string
 }
 
 /**
- * How much document body one call may return. Measured: a five-path read of 56 KB of markdown came
- * back as 107 KB of JSON — escaping newlines and repeating each frontmatter roughly doubles it — and
- * overflowed the caller's limit, which dumped the whole answer to a file. A batch read that answers
- * with less is more useful than one that answers with a file path, so the budget is spent in the
- * order asked and what it does not reach is named rather than dropped.
+ * How much document body one call may return, and a ceiling the caller cannot raise.
+ *
+ * Measured in the field on a five-path read: 55,705 bytes of markdown came back as 61,564 characters
+ * of JSON — escaping newlines costs about a tenth, not the doubling an earlier estimate assumed — and
+ * the caller persisted it to a file instead of returning it. A seven-path read of 91,073 characters
+ * was refused outright, so the answer was a file path both times.
+ *
+ * The same session showed why a soft default is not enough: the agent passed `maxBytes: 200000` on
+ * both calls and opted straight out of the budget it did not know it wanted. So the budget is a
+ * ceiling now — `maxBytes` may lower it and never raise it — and a document that would overshoot is
+ * named under `skipped` rather than read whole. The first document is always returned, so a bank
+ * whose smallest document exceeds the budget still answers with something.
  */
-const BATCH_BUDGET = 60_000
+const BATCH_BUDGET = 40_000
 
 /**
  * Reads several documents in one call. Measured need, not symmetry: over two full working sessions
@@ -110,7 +119,8 @@ export async function readMany(
   requests: readonly (string | { path: string; section?: string })[],
   opts: { maxBytes?: number } = {},
 ): Promise<ReadManyResult> {
-  const budget = opts.maxBytes ?? BATCH_BUDGET
+  const asked = opts.maxBytes ?? BATCH_BUDGET
+  const budget = Math.min(asked, BATCH_BUDGET)
   const documents: ReadResult[] = []
   const failed: { path: string; error: string }[] = []
   const skipped: ReadManyResult['skipped'] = []
@@ -118,8 +128,11 @@ export async function readMany(
 
   for (const request of requests) {
     const { path: docPath, section } = typeof request === 'string' ? { path: request, section: undefined } : request
-    if (spent >= budget) {
-      const doc = bank.get(docPath)
+    const doc = bank.get(docPath)
+    // Look ahead on the indexed size, so the budget bounds what comes back rather than what was
+    // already over it. Sectioned requests read less than the whole file, so they are not held back.
+    const overshoots = !section && doc ? spent + doc.bytes > budget : false
+    if (documents.length > 0 && (spent >= budget || overshoots)) {
       skipped.push({
         path: docPath,
         title: doc?.title ?? '',
@@ -136,5 +149,11 @@ export async function readMany(
       failed.push({ path: docPath, error: err instanceof Error ? err.message : String(err) })
     }
   }
-  return { documents, failed, skipped, bytes: spent, budgetBytes: budget }
+  const note =
+    asked > BATCH_BUDGET
+      ? `maxBytes ${asked} is above the ceiling of ${BATCH_BUDGET}, so ${BATCH_BUDGET} was used. ` +
+        'A larger answer is returned to you as a file path rather than as text, which is worse than a ' +
+        'short answer. Read the skipped documents by section.'
+      : undefined
+  return { documents, failed, skipped, bytes: spent, budgetBytes: budget, ...(note ? { note } : {}) }
 }

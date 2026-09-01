@@ -244,4 +244,14 @@ describe('E4 — search and delta', () => {
   it('rejects a ref that does not exist instead of returning an empty delta', async () => {
     await expect(changed(bank, 'no-such-ref-here')).rejects.toThrow(/not a commit/i)
   })
+
+  it('walks off the end of a young history onto its first commit', async () => {
+    // `HEAD~20` is what the session-start procedure asks for, and a repository three commits old is
+    // a young repository rather than a bad question. Reported from a live session.
+    const delta = await changed(bank, 'HEAD~20')
+    expect(delta.mode).toBe('git')
+    expect(delta.since).toBe('HEAD~20')
+    expect(delta.note).toMatch(/reaches past the start of this repository/)
+    expect(delta.changes.length).toBeGreaterThan(0)
+  })
 })

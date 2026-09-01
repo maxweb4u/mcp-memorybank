@@ -77,7 +77,7 @@ export async function startServer(bank: Bank): Promise<void> {
         'a handful of documents is one call, not one call each, and there is never a reason to ' +
         'shell out to cat instead. Section reads matter: canonical documents in real banks reach ' +
         '190 KB. Returns parsed frontmatter alongside the body. A path that does not resolve is ' +
-        'reported under failed without sinking the rest of the batch. A batch has a byte budget, spent in the order asked; whatever it does not reach comes back under skipped with its section list, so ask for those by section rather than repeating the whole read.',
+        'reported under failed without sinking the rest of the batch. A batch has a byte budget, spent in the order asked; whatever it does not reach comes back under skipped with its section list, so ask for those by section rather than repeating the whole read. Ten whole documents do not fit in one answer, and asking for them anyway returns a file path instead of the text.',
       inputSchema: {
         path: z
           .union([z.string(), z.array(z.union([z.string(), z.object({ path: z.string(), section: z.string().optional() })]))])
@@ -88,7 +88,7 @@ export async function startServer(bank: Bank): Promise<void> {
           .int()
           .min(1000)
           .optional()
-          .describe('Budget for a multi-path read, spent in the order asked; default 60000'),
+          .describe('Lower the byte budget of a multi-path read. It cannot be raised: a bigger answer reaches you as a file path, not as text. Default and ceiling 40000'),
       },
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
@@ -536,7 +536,7 @@ export async function startServer(bank: Bank): Promise<void> {
         since: z
           .string()
           .optional()
-          .describe('Git ref or ISO date to compare against; defaults to the last week of commits'),
+          .describe('Git ref or ISO date to compare against; the default reaches back twenty commits, or to the first one in a younger repository'),
       },
     },
     ({ since }) => ({

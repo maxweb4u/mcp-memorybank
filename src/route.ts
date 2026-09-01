@@ -8,9 +8,19 @@ const FIELD_WEIGHT = { canonicalFor: 5, purpose: 3, title: 2, section: 1 } as co
 const STATUS_WEIGHT: Record<string, number> = { active: 1, draft: 0.7, archived: 0.2 }
 const CLOSED_DELIVERY = new Set(['done', 'cancelled'])
 
+/**
+ * Function words carry no routing signal. The list is longer than it looks it needs to be because a
+ * short one was measured failing: asked for "improvements deferred from review ... that are not
+ * defects", the router scored a document on the word `not` and put it third. `search.ts` had
+ * already filtered `not`, `from` and `can`; the two lists had simply drifted apart.
+ */
 const STOP = new Set([
   'the', 'a', 'an', 'of', 'in', 'on', 'for', 'to', 'and', 'or', 'is', 'are', 'what', 'where', 'how',
   'which', 'that', 'this', 'do', 'does', 'when', 'why', 'who', 'with', 'about', 'i', 'we', 'it',
+  'not', 'no', 'from', 'but', 'its', 'has', 'have', 'had', 'was', 'were', 'be', 'been', 'being',
+  'can', 'could', 'should', 'would', 'may', 'might', 'must', 'will', 'as', 'at', 'by', 'if', 'into',
+  'than', 'then', 'there', 'these', 'those', 'them', 'they', 'you', 'my', 'our', 'us', 'me',
+  'any', 'all', 'some', 'such', 'only', 'also', 'just', 'very', 'each', 'both', 'get', 'got',
   ...RU_STOP,
 ])
 
