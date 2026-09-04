@@ -6,9 +6,13 @@
  * English fields cannot answer it at all. "где пороги фильтрации" tokenizes to three words that
  * appear nowhere in `purpose` or `canonical_for`, so the result set is empty rather than wrong.
  *
- * The dictionary below is the domain vocabulary of the corpus, not a general one: keys were taken
- * from the most frequent words in `title` / `purpose` / `canonical_for` across 19 real banks, plus
- * the governance terms the flows use. It is a routing aid, not a translator.
+ * The dictionary below is a domain vocabulary, not a general one, and it has two layers. The first
+ * was taken from the most frequent words in `title` / `purpose` / `canonical_for` across 19 real
+ * banks, plus the governance terms the flows use — the vocabulary of banks. The second is the
+ * vocabulary of the things banks describe, added after the first layer was measured answering
+ * questions about the bank and returning nothing at all for questions about the product. It is a
+ * routing aid, not a translator; genuinely project-specific terms belong in `dna/vocabulary.md`,
+ * which overlays this at load time.
  */
 
 /** Russian is heavily inflected, so a dictionary entry is a stem prefix, not a word. */
@@ -80,7 +84,7 @@ const DICTIONARY: readonly Entry[] = [
   ['модел', 'model'],
   ['проблем', 'problem'],
   ['продукт', 'product'],
-  ['словар', 'glossary', 'vocabulary'],
+  ['словар', 'glossary', 'vocabulary', 'dictionary'],
   ['событ', 'event', 'events'],
   ['состоян', 'state', 'states'],
   ['термин', 'term', 'vocabulary'],
@@ -157,6 +161,80 @@ const DICTIONARY: readonly Entry[] = [
   ['откат', 'rollback', 'revert'],
   ['обзор', 'review'],
   ['ревью', 'review'],
+
+  // The product the bank describes, rather than the bank. Measured on a real bank of 77 hand-written
+  // documents: "как устроен разбиение книги на страницы" and "что известно про домашний экран"
+  // both returned nothing, while the same two questions in English routed correctly. Every entry
+  // above had been taken from the vocabulary of the banks themselves, so the layer answered
+  // questions about the bank and fell silent on questions about the thing it documents — and a
+  // person asking in Russian asks about the thing. Where one Russian stem carries two meanings, the
+  // longer key wins by construction (RU_KEYS is sorted by length), so глава/главный and
+  // удаление/удалённый are split rather than blurred.
+  ['экран', 'screen'],
+  ['страниц', 'page', 'pages', 'pagination'],
+  ['разбиен', 'split', 'splitting', 'pagination'],
+  ['разбив', 'split', 'splitting'],
+  ['кнопк', 'button'],
+  ['спис', 'list'],
+  ['меню', 'menu'],
+  ['вкладк', 'tab'],
+  ['диалог', 'dialog'],
+  ['макет', 'layout'],
+  ['верстк', 'layout', 'markup'],
+  ['интерфейс', 'interface', 'ui'],
+  ['шрифт', 'font'],
+  ['цвет', 'color', 'colour'],
+  ['размер', 'size'],
+  ['иконк', 'icon'],
+  ['виджет', 'widget'],
+  ['анимац', 'animation'],
+  ['прокрутк', 'scroll', 'scrolling'],
+  ['жестк', 'hard', 'strict'],
+  ['жёстк', 'hard', 'strict'],
+  ['жест', 'gesture'],
+  ['ввод', 'input'],
+  ['вывод', 'output', 'conclusion'],
+
+  ['книг', 'book'],
+  ['главн', 'main', 'primary'],
+  ['глав', 'chapter'],
+  ['текст', 'text'],
+  ['слов', 'word', 'words'],
+  ['предложен', 'sentence', 'proposal'],
+  ['абзац', 'paragraph'],
+  ['перевод', 'translation', 'translate'],
+  ['язык', 'language'],
+  ['изображен', 'image'],
+  ['картинк', 'image', 'picture'],
+  ['файл', 'file'],
+  ['папк', 'folder', 'directory'],
+  ['библиотек', 'library'],
+
+  ['пользовател', 'user'],
+  ['аккаунт', 'account'],
+  ['профил', 'profile'],
+  ['устройств', 'device'],
+  ['сервер', 'server'],
+  ['ответствен', 'responsibility', 'ownership'],
+  ['ответ', 'response', 'answer'],
+  ['сообщен', 'message'],
+  ['уведомлен', 'notification'],
+  ['сортиров', 'sort', 'sorting'],
+  ['загруз', 'load', 'loading', 'download'],
+  ['скачив', 'download'],
+  ['выгрузк', 'export', 'upload'],
+  ['импорт', 'import'],
+  ['экспорт', 'export'],
+  ['синхрониз', 'sync', 'synchronization'],
+  ['офлайн', 'offline'],
+  ['оффлайн', 'offline'],
+  ['онлайн', 'online'],
+  ['удаленн', 'remote'],
+  ['удален', 'delete', 'deletion'],
+  ['добавлен', 'add', 'addition'],
+  ['обновлен', 'update'],
+  ['экземпляр', 'instance'],
+  ['сет', 'network'],
 ]
 
 /** Question words carry no lexical content; they would match a `purpose` by accident. */

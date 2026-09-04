@@ -32,6 +32,7 @@ describe('stdio server', () => {
         'bank_read',
         'bank_route',
         'bank_search',
+        'bank_set_status',
         'bank_update_section',
         'bank_validate',
       ])

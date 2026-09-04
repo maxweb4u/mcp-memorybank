@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import { checkGovernance, contentFrom } from './create.js'
 import type { Bank } from './bank.js'
 
 export interface UpdateSectionInput {
@@ -7,7 +8,9 @@ export interface UpdateSectionInput {
   /** Level-two heading whose body is being written. */
   section: string
   /** Markdown to put under that heading. */
-  content: string
+  content?: string
+  /** Markdown read from a file instead of carried in the call. Mutually exclusive with `content`. */
+  contentFile?: string
   /** `replace` overwrites the section body, `append` adds to the end of it. */
   mode?: 'replace' | 'append'
   dryRun?: boolean
@@ -78,7 +81,10 @@ export async function updateSection(bank: Bank, input: UpdateSectionInput): Prom
     reject(`${doc.path} is a template. Templates are edited by hand, not through the server.`)
   }
   if (!input.section.trim()) reject('`section` is required: this tool writes one named section, never a whole document.')
-  if (!input.content.trim()) reject('`content` is empty. To remove a section, edit the document by hand and say so.')
+  const supplied = await contentFrom(input.content, input.contentFile, 'content')
+  if (!supplied?.trim()) {
+    reject('`content` is empty. To remove a section, edit the document by hand and say so.')
+  }
 
   const mode = input.mode ?? 'replace'
   const raw = await fs.readFile(bank.abs(doc.path), 'utf8')
@@ -95,7 +101,7 @@ export async function updateSection(bank: Bank, input: UpdateSectionInput): Prom
 
   const next = found.find((h) => h.index > hit.index)
   const end = next ? next.index : lines.length
-  const body = input.content.trim()
+  const body = supplied.trim()
   const kept = mode === 'append' ? lines.slice(hit.index + 1, end).join('\n').trim() : ''
   const replacement = [`## ${hit.title}`, '', ...(kept ? [kept, ''] : []), body, ''].join('\n')
 
@@ -220,4 +226,131 @@ export async function edit(bank: Bank, input: EditInput): Promise<EditResult> {
     bytesAfter: Buffer.byteLength(contents),
     context: nextBody.slice(start, at + input.replace.length + 80),
   }
+}
+
+export interface SetStatusInput {
+  /** Bank-relative path of an existing document. */
+  path: string
+  /** The status to move it to, from the values `dna/` declares. */
+  status: string
+  /**
+   * Drop `canonical_for` as part of archiving. Required when archiving a document that owns keys,
+   * because ownership does not survive retirement and the successor cannot claim a key twice.
+   */
+  releaseCanonical?: boolean
+  dryRun?: boolean
+}
+
+export interface SetStatusResult {
+  path: string
+  from: string
+  to: string
+  changed: boolean
+  dryRun: boolean
+  /** Governance findings that did not block the transition. */
+  warnings: string[]
+  /** Ownership keys given up by this transition, when archiving released them. */
+  released?: string[]
+}
+
+/**
+ * Moves an existing document from one lifecycle status to another.
+ *
+ * The gap this closes was measured, and it was the worst one to leave open. `bank_create` takes a
+ * status and `bank_promote` sets one, but nothing could change the status of a document already in
+ * place — so an agent filling a seeded draft reached for `sed -i` on the frontmatter. That is
+ * precisely the edit governance exists for: `status: active` is the gate that requires
+ * `derived_from`, so the one transition the gate guards was the one transition that skipped it.
+ *
+ * Everything else in the frontmatter is left exactly as written, `status` included when it is
+ * already what was asked for. A document in `_inbox` is refused: the way out of quarantine is
+ * `bank_promote`, which sets the status as part of the move.
+ */
+export async function setStatus(bank: Bank, input: SetStatusInput): Promise<SetStatusResult> {
+  const doc = bank.get(input.path)
+  if (!doc) reject(`Not a document of this bank: ${input.path}`)
+  if (doc.docFunction === 'template') {
+    reject(`${doc.path} is a template. Templates are edited by hand, not through the server.`)
+  }
+  if (doc.layer === 'inbox') {
+    reject(
+      `${doc.path} is in the quarantine, where status is not the thing that moves it. ` +
+        'Use bank_promote to place it and set its status in one step, or bank_discard to drop it.',
+    )
+  }
+  const to = input.status.trim()
+  if (!to) reject('`status` is required: the lifecycle value to move this document to.')
+
+  // Ownership does not survive retirement. `ownerByKey` does not look at status, so a document that
+  // is archived while still declaring `canonical_for` goes on blocking the successor that should own
+  // the key — bank_create refuses it with "already owned by", naming a document nobody reads any
+  // more. Measured: a session archived a document and stripped the block with a python regex,
+  // because that was the only way to do it at all.
+  const owned = doc.canonicalFor
+  const archiving = to === 'archived'
+  if (input.releaseCanonical && !archiving) {
+    reject('`releaseCanonical` belongs to archiving. Ownership is given up when a document retires, not on any other transition.')
+  }
+  if (archiving && owned.length > 0 && !input.releaseCanonical) {
+    reject(
+      `${doc.path} still owns ${owned.map((k) => `"${k}"`).join(', ')}. An archived document that ` +
+        'keeps its keys blocks whoever should own them next. Pass releaseCanonical: true to give ' +
+        'them up with this transition, or move them to the successor document first.',
+    )
+  }
+
+  const warnings = checkGovernance(bank, {
+    target: doc.path,
+    status: to,
+    docKind: doc.docKind,
+    derivedFrom: doc.derivedFrom.map((e) => e.raw),
+    canonicalFor: doc.canonicalFor,
+  })
+
+  const from = doc.status
+  if (from === to && !(archiving && input.releaseCanonical && owned.length > 0)) {
+    return { path: doc.path, from, to, changed: false, dryRun: Boolean(input.dryRun), warnings }
+  }
+
+  const raw = await fs.readFile(bank.abs(doc.path), 'utf8')
+  const { head, body } = splitRaw(raw)
+  if (!head) reject(`${doc.path} has no frontmatter, so it has no status to set.`)
+
+  const lines = head.split('\n')
+  const released = archiving && input.releaseCanonical && owned.length > 0 ? stripCanonical(lines) : undefined
+  const at = lines.findIndex((l) => /^status:\s*/.test(l))
+  if (at === -1) {
+    // No status key at all: put one in, immediately before the closing delimiter.
+    const close = lines.length - (lines[lines.length - 1] === '' ? 2 : 1)
+    lines.splice(close, 0, `status: ${to}`)
+  } else {
+    lines[at] = `status: ${to}`
+  }
+
+  if (!input.dryRun) await fs.writeFile(bank.abs(doc.path), `${lines.join('\n')}${body}`, 'utf8')
+
+  return {
+    path: doc.path,
+    from,
+    to,
+    changed: !input.dryRun,
+    dryRun: Boolean(input.dryRun),
+    warnings,
+    ...(released ? { released: owned } : {}),
+  }
+}
+
+/**
+ * Removes the `canonical_for` declaration from a frontmatter block, in place. Handles both the block
+ * form — the key followed by its indented list items — and the inline `[a, b]` form.
+ */
+function stripCanonical(lines: string[]): boolean {
+  const at = lines.findIndex((l) => /^canonical_for:/.test(l))
+  if (at === -1) return false
+  let end = at + 1
+  if (/^canonical_for:\s*$/.test(lines[at]!)) {
+    while (end < lines.length && /^\s+-\s/.test(lines[end]!)) end++
+  }
+  lines.splice(at, end - at)
+  return true
 }

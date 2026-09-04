@@ -193,6 +193,7 @@ node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.m
 | `bank_create` | creates a document from the bank's own template and registers it in the index, with gates and `_inbox` |
 | `bank_edit` | replaces one exact fragment of a body — a table row, a step, a heading; refuses an ambiguous match |
 | `bank_update_section` | writes the body of one named section of an existing document, leaving everything else alone |
+| `bank_set_status` | moves a document to another lifecycle status, running the gates that guard activation |
 | `bank_promote` | moves a note out of `_inbox/` into a canonical layer, registering it and deleting the source |
 | `bank_discard` | drops a quarantined note, on the record — `_inbox/` only, and a reason is required |
 
@@ -242,7 +243,7 @@ where the content comes from and where an unreviewed note goes.
 `body` rather than creating the document and writing the prose into it afterwards — a document that
 arrives as headings alone tends to get its content through a shell, outside every gate the server has.
 
-Two tools reach into a document that already exists, and the split between them is a measured one
+Three tools reach into a document that already exists, and the split between them is a measured one
 rather than a tidy one.
 
 `bank_update_section` writes the body of one named level-two section, leaving the frontmatter, the
@@ -251,6 +252,14 @@ title and every other section untouched. It exists because `bank_init` seeds `pr
 refuses an occupied path — correctly — which left the two documents the server asks for as the two it
 could not write. A section that does not exist is refused with the list of the real ones rather than
 appended, so a mistyped heading cannot quietly add a section.
+
+Both `bank_update_section` and `bank_create` will take their content from a file instead of from the
+call — `contentFile` and `bodyFile`. That exists for one measured reason: a session that built a bank
+generated a 610-row table out of nineteen other documents with a script and wrote it into the bank
+directly, bypassing every gate. Not because the tool could not do the write, but because the tool
+wanted the whole table as a string argument, and the table had never been in the agent's context at
+all. Content that was computed rather than composed should not have to be recited to be governed, and
+a body that does not travel as a JSON string cannot fail to serialise as one.
 
 `bank_edit` replaces one exact fragment. Section-level writing turned out to be the wrong grain for
 most edits: over a working session, five of eleven shell writes into the bank changed a few lines
@@ -261,6 +270,22 @@ is the one it already knows: an exact match, refused unless it occurs exactly on
 reported rather than the first occurrence guessed at. `section` narrows the search when the same
 words appear twice. The frontmatter is out of reach by construction, since the search runs on the
 body — an edit can rename a heading, but it cannot quietly rewrite `canonical_for`.
+
+`bank_set_status` moves a document from one lifecycle status to another, and it exists because the
+frontmatter is out of reach of the other two. A draft that `bank_init` seeded and
+`bank_update_section` filled has to become active at some point, and with no tool for it an agent
+reaches for a stream editor on the frontmatter — measured, in a session that built a bank from
+nothing. That is the worst edit to leave to a shell: `status: active` is the gate that requires
+`derived_from`, so the one transition governance exists to guard was the one transition that skipped
+it. Here the check runs on the way in, and a note in `_inbox/` is refused outright, since the way out
+of quarantine is `bank_promote`, which places the note and sets its status in one move.
+
+Archiving is the one transition that gives something up. `ownerByKey` does not look at status, so a
+document archived while still declaring `canonical_for` goes on blocking the successor that should
+own the key — `bank_create` refuses the successor with "already owned by", naming a document nobody
+reads any more. Archiving an owner is therefore refused unless `releaseCanonical` says so, and the
+keys are dropped as part of the same write. Measured, again: a session archived a document and
+stripped the block with a python regex, because that was the only way to do it at all.
 
 `bank_create` takes the template from the bank's own `flows/templates/`. Templates there are
 wrappers: the document to instantiate sits inside them as two blocks under

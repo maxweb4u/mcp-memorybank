@@ -5,7 +5,7 @@ import path from 'node:path'
 import { Bank } from '../src/bank.js'
 import { init } from '../src/init.js'
 import { create, discard, promote } from '../src/create.js'
-import { edit, updateSection } from '../src/update.js'
+import { edit, setStatus, updateSection } from '../src/update.js'
 import { readMany } from '../src/read.js'
 import { validate } from '../src/validate.js'
 import { route } from '../src/route.js'
@@ -394,5 +394,226 @@ describe('a batch read that does not overflow the caller', () => {
     expect(result.documents.map((d) => d.path)).toEqual(['domain/model.md'])
     expect(result.failed[0]!.path).toBe('nowhere/absent.md')
     expect(result.skipped).toEqual([])
+  })
+})
+
+describe('moving a document through its lifecycle', () => {
+  it('flips the status and leaves the rest of the frontmatter byte for byte', async () => {
+    const before = await fs.readFile(bank.abs(PLACEHOLDER), 'utf8')
+    expect(before).toContain('status: draft')
+
+    const result = await setStatus(bank, { path: PLACEHOLDER, status: 'active' })
+    expect(result.from).toBe('draft')
+    expect(result.to).toBe('active')
+    expect(result.changed).toBe(true)
+
+    const after = await fs.readFile(bank.abs(PLACEHOLDER), 'utf8')
+    expect(after).toContain('status: active')
+    expect(after.replace('status: active', 'status: draft')).toBe(before)
+  })
+
+  it('reports a transition to the status it is already in without touching the file', async () => {
+    await setStatus(bank, { path: PLACEHOLDER, status: 'active' })
+    await bank.refresh()
+    const before = await fs.readFile(bank.abs(PLACEHOLDER), 'utf8')
+
+    const result = await setStatus(bank, { path: PLACEHOLDER, status: 'active' })
+    expect(result.changed).toBe(false)
+    expect(result.from).toBe('active')
+    expect(await fs.readFile(bank.abs(PLACEHOLDER), 'utf8')).toBe(before)
+  })
+
+  it('runs the gate that the shell edit skipped', async () => {
+    // Field case: `sed -i '' 's/^status: draft$/status: active/'` on a seeded draft. Governance
+    // requires derived_from before a document can become active, and a stream editor does not know
+    // that. Here the transition is where the check happens.
+    await create(bank, {
+      docKind: 'engineering',
+      path: 'engineering/no-parent.md',
+      title: 'A Document With No Parent',
+      purpose: 'Read when testing the gate that guards activation.',
+      body: 'Nothing depends on this and it depends on nothing.',
+    })
+    await bank.refresh()
+
+    await expect(setStatus(bank, { path: 'engineering/no-parent.md', status: 'active' })).rejects.toThrow(
+      /derived_from/i,
+    )
+    const raw = await fs.readFile(bank.abs('engineering/no-parent.md'), 'utf8')
+    expect(raw).toContain('status: draft')
+  })
+
+  it('sends a quarantined note to bank_promote instead of activating it in place', async () => {
+    await create(bank, {
+      docKind: 'engineering',
+      path: '_inbox/a-captured-fact.md',
+      title: 'A Captured Fact',
+      purpose: 'Read when testing that the quarantine is not left by changing a field.',
+      inbox: true,
+      body: 'Captured during a session.',
+    })
+    await bank.refresh()
+
+    await expect(setStatus(bank, { path: '_inbox/a-captured-fact.md', status: 'active' })).rejects.toThrow(
+      /bank_promote/,
+    )
+  })
+
+  it('refuses a template and an unknown path', async () => {
+    await expect(
+      setStatus(bank, { path: 'flows/templates/adr.md', status: 'archived' }),
+    ).rejects.toThrow(/template|Not a document/i)
+    await expect(setStatus(bank, { path: 'nowhere/absent.md', status: 'active' })).rejects.toThrow(
+      /Not a document of this bank/,
+    )
+  })
+
+  it('changes nothing on a dry run, the released keys included', async () => {
+    const before = await fs.readFile(bank.abs('engineering/testing-policy.md'), 'utf8')
+    const result = await setStatus(bank, {
+      path: 'engineering/testing-policy.md',
+      status: 'archived',
+      releaseCanonical: true,
+      dryRun: true,
+    })
+    expect(result.dryRun).toBe(true)
+    expect(result.changed).toBe(false)
+    expect(result.to).toBe('archived')
+    expect(result.released).toContain('required_test_coverage')
+    expect(await fs.readFile(bank.abs('engineering/testing-policy.md'), 'utf8')).toBe(before)
+  })
+})
+
+describe('content that was generated rather than composed', () => {
+  let scratch: string
+
+  beforeEach(async () => {
+    scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'memorybank-generated-'))
+  })
+
+  it('writes a section from a file the caller never had to recite', async () => {
+    // Field case: a script read nineteen documents, generated a 610-row table, and wrote it into the
+    // bank directly — because the tool wanted the whole table as a string it had never held.
+    const rows = Array.from({ length: 400 }, (_, i) => `| CAP-${i} | capability ${i} | TBD |`).join('\n')
+    const generated = path.join(scratch, 'table.md')
+    await fs.writeFile(generated, `| ID | Capability | Decision |\n| --- | --- | --- |\n${rows}\n`)
+
+    const result = await updateSection(bank, {
+      path: PLACEHOLDER,
+      section: 'Problem',
+      contentFile: generated,
+    })
+    expect(result.updated).toBe(true)
+
+    const after = await fs.readFile(bank.abs(PLACEHOLDER), 'utf8')
+    expect(after).toContain('| CAP-399 | capability 399 | TBD |')
+    expect(after).toContain('status:')
+  })
+
+  it('creates a document whose body came off disk', async () => {
+    const generated = path.join(scratch, 'body.md')
+    await fs.writeFile(generated, 'Generated prose, several paragraphs of it.\n')
+
+    await create(bank, {
+      docKind: 'engineering',
+      path: 'engineering/from-a-file.md',
+      title: 'Written From A File',
+      purpose: 'Read when testing that a generated body reaches the bank through the gates.',
+      derivedFrom: ['../dna/governance.md'],
+      bodyFile: generated,
+    })
+
+    const raw = await fs.readFile(bank.abs('engineering/from-a-file.md'), 'utf8')
+    expect(raw).toContain('Generated prose, several paragraphs of it.')
+    expect(raw).toContain('# Written From A File')
+  })
+
+  it('refuses both at once rather than picking one', async () => {
+    const generated = path.join(scratch, 'both.md')
+    await fs.writeFile(generated, 'from the file\n')
+    await expect(
+      updateSection(bank, {
+        path: PLACEHOLDER,
+        section: 'Problem',
+        content: 'from the call',
+        contentFile: generated,
+      }),
+    ).rejects.toThrow(/either content or contentFile, not both/i)
+  })
+
+  it('names the file it could not read', async () => {
+    await expect(
+      updateSection(bank, {
+        path: PLACEHOLDER,
+        section: 'Problem',
+        contentFile: path.join(scratch, 'absent.md'),
+      }),
+    ).rejects.toThrow(/no such file/i)
+  })
+
+  it('refuses a file past the size a document should ever be', async () => {
+    const huge = path.join(scratch, 'huge.md')
+    await fs.writeFile(huge, 'x'.repeat(1_000_001))
+    await expect(
+      updateSection(bank, { path: PLACEHOLDER, section: 'Problem', contentFile: huge }),
+    ).rejects.toThrow(/past the 1000000 this accepts/)
+  })
+})
+
+describe('retiring a document that owns facts', () => {
+  const OWNER = 'engineering/owns-a-key.md'
+
+  beforeEach(async () => {
+    if (!bank.get(OWNER)) {
+      await create(bank, {
+        docKind: 'engineering',
+        path: OWNER,
+        title: 'Owns A Key',
+        purpose: 'Read when testing that ownership does not survive retirement.',
+        derivedFrom: ['../dna/governance.md'],
+        canonicalFor: ['retirement_test_key'],
+        status: 'active',
+        body: 'This document owns a fact.',
+      })
+      await bank.refresh()
+    }
+  })
+
+  it('refuses to archive an owner silently, and names what it owns', async () => {
+    // Measured: a session archived a document and stripped canonical_for with a python regex,
+    // because the alternative was leaving an archived document owning the key its successor needed.
+    await expect(setStatus(bank, { path: OWNER, status: 'archived' })).rejects.toThrow(
+      /still owns "retirement_test_key"/,
+    )
+    expect(await fs.readFile(bank.abs(OWNER), 'utf8')).toContain('retirement_test_key')
+  })
+
+  it('gives the key up when told to, and lets the successor claim it', async () => {
+    const result = await setStatus(bank, { path: OWNER, status: 'archived', releaseCanonical: true })
+    expect(result.to).toBe('archived')
+    expect(result.released).toEqual(['retirement_test_key'])
+
+    const raw = await fs.readFile(bank.abs(OWNER), 'utf8')
+    expect(raw).not.toContain('canonical_for')
+    expect(raw).toContain('status: archived')
+    expect(raw).toContain('# Owns A Key')
+
+    await bank.refresh()
+    await expect(
+      create(bank, {
+        docKind: 'engineering',
+        path: 'engineering/the-successor.md',
+        title: 'The Successor',
+        purpose: 'Read when testing that a released key can be claimed again.',
+        derivedFrom: ['../dna/governance.md'],
+        canonicalFor: ['retirement_test_key'],
+      }),
+    ).resolves.toMatchObject({ created: true })
+  })
+
+  it('keeps releaseCanonical tied to archiving', async () => {
+    await expect(
+      setStatus(bank, { path: OWNER, status: 'draft', releaseCanonical: true }),
+    ).rejects.toThrow(/belongs to archiving/)
   })
 })

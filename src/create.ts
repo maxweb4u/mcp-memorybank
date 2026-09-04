@@ -21,6 +21,11 @@ export interface CreateInput {
    * working session, nine governed creations against six shell writes into the same bank.
    */
   body?: string
+  /**
+   * The document body, read from a file instead of carried in the call. Mutually exclusive with
+   * `body`.
+   */
+  bodyFile?: string
   /** Extra frontmatter fields, appended after the governed ones. */
   extra?: Record<string, unknown>
   /** Route into the quarantine directory instead of the canonical layers. */
@@ -49,6 +54,42 @@ const TEMPLATE_ONLY = new Set(['template_for', 'template_target_path', 'doc_func
 
 function fail(message: string): never {
   throw new Error(message)
+}
+
+/** A document this size is a defect of its own, and a runaway generator should not become one. */
+const MAX_CONTENT_FILE = 1_000_000
+
+/**
+ * Content for a write, taken either from the call or from a file on disk.
+ *
+ * The file half is measured need. A session that built a bank generated a 610-row table out of
+ * nineteen other documents with a script and wrote it into the bank directly, bypassing every gate —
+ * not because the tool could not do the write, but because the tool wanted the whole table as a
+ * string argument, and the table had never been in the agent's context at all. Content that was
+ * computed rather than composed should not have to be recited to be governed.
+ */
+export async function contentFrom(
+  inline: string | undefined,
+  file: string | undefined,
+  what: string,
+): Promise<string | undefined> {
+  if (inline !== undefined && file !== undefined) {
+    fail(`Pass either ${what} or ${what}File, not both.`)
+  }
+  if (file === undefined) return inline
+  if (!file.trim()) fail(`${what}File is empty. Pass a path, or use ${what} for content you have in hand.`)
+
+  let raw: string
+  try {
+    raw = await fs.readFile(file, 'utf8')
+  } catch (err) {
+    const why = err instanceof Error && 'code' in err && err.code === 'ENOENT' ? 'no such file' : String(err)
+    fail(`${what}File "${file}" could not be read (${why}). The path is absolute, or relative to the server's working directory.`)
+  }
+  if (Buffer.byteLength(raw) > MAX_CONTENT_FILE) {
+    fail(`${what}File "${file}" is ${Buffer.byteLength(raw)} bytes, past the ${MAX_CONTENT_FILE} this accepts. Split it, or write the document in sections.`)
+  }
+  return raw
 }
 
 const PLACEHOLDER = /^(YYYY-MM-DD|YYYYMMDD.*|<[^>]+>|.*\b(FT-XXX|ADR-ID|PRD-ID|UC-XXX|EP-XXX|PROMPT-ID)\b.*)$/
@@ -233,7 +274,7 @@ async function checkTarget(bank: Bank, target: string, original: string): Promis
   }
 }
 
-interface Governed {
+export interface Governed {
   target: string
   status: string
   docKind: string
@@ -242,7 +283,7 @@ interface Governed {
 }
 
 /** The governance gates. Refusals throw; everything softer comes back as a warning. */
-function checkGovernance(bank: Bank, g: Governed): string[] {
+export function checkGovernance(bank: Bank, g: Governed): string[] {
   const warnings: string[] = []
 
   for (const entry of g.derivedFrom) {
@@ -338,10 +379,11 @@ export async function create(bank: Bank, input: CreateInput): Promise<CreateResu
     warnings.push(`No template matched doc_kind "${input.docKind}"; wrote a minimal document instead.`)
   }
 
-  if (input.body?.trim()) {
+  const supplied = await contentFrom(input.body, input.bodyFile, 'body')
+  if (supplied?.trim()) {
     // The author's prose replaces the template's prompts rather than following them: a document
     // carrying both reads as half-filled, and the template's headings are guidance, not content.
-    body = `# ${input.title}\n\n${input.body.trim()}\n`
+    body = `# ${input.title}\n\n${supplied.trim()}\n`
     if (template) warnings.push(`Body supplied, so the prose of ${template.path} was not used.`)
   }
 

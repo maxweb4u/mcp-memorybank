@@ -11,7 +11,7 @@ import { SearchIndex, search } from './search.js'
 import { changed } from './changed.js'
 import { create, discard, inbox, promote } from './create.js'
 import { init } from './init.js'
-import { edit, updateSection } from './update.js'
+import { edit, setStatus, updateSection } from './update.js'
 
 const LAYERS = ['dna', 'knowledge', 'decision', 'delivery', 'flow', 'other'] as const
 
@@ -156,6 +156,13 @@ export async function startServer(bank: Bank): Promise<void> {
           .string()
           .optional()
           .describe('The document body below the title. Supply it here rather than writing the file afterwards'),
+        bodyFile: z
+          .string()
+          .optional()
+          .describe(
+            'Read the body from this file instead — absolute, or relative to the server. Exactly one ' +
+              'of body and bodyFile.',
+          ),
         extra: z.record(z.string(), z.unknown()).optional().describe('Additional frontmatter fields'),
         inbox: z.boolean().optional().describe('Write to the _inbox/ quarantine instead of a canonical layer'),
         dryRun: z.boolean().optional().describe('Report what would happen without writing anything'),
@@ -212,11 +219,19 @@ export async function startServer(bank: Bank): Promise<void> {
         'product/context.md and engineering/testing-policy.md as placeholders, and bank_create ' +
         'refuses an occupied path — and how prose reaches a document created from a template. ' +
         'A section that does not exist is refused with the list of the real ones rather than ' +
-        'appended. Templates and quarantined notes are refused outright.',
+        'appended. Templates are refused outright; a quarantined note can be filled in place.',
       inputSchema: {
         path: z.string().describe('Bank-relative path of an existing document'),
         section: z.string().describe('Level-two heading whose body is being written'),
-        content: z.string().min(1).describe('Markdown to put under that heading'),
+        content: z.string().min(1).optional().describe('Markdown to put under that heading'),
+        contentFile: z
+          .string()
+          .optional()
+          .describe(
+            'Read the markdown from this file instead — absolute, or relative to the server. Use it ' +
+              'for content a script generated: it never has to pass through the call. Exactly one of ' +
+              'content and contentFile.',
+          ),
         mode: z
           .enum(['replace', 'append'])
           .optional()
@@ -229,6 +244,43 @@ export async function startServer(bank: Bank): Promise<void> {
       await bank.refresh()
       try {
         return json(await updateSection(bank, input))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  server.registerTool(
+    'bank_set_status',
+    {
+      title: 'Move a document to another lifecycle status',
+      description:
+        'Changes the status of a document already in place — the draft that bank_init seeded and ' +
+        'bank_update_section filled becoming active, an active document being archived. This is ' +
+        'the only governed way to do it: bank_edit cannot reach the frontmatter, and status is ' +
+        'where the gates are, so making a document active without derived_from is refused here ' +
+        'rather than discovered by bank_validate afterwards. Archiving a document that owns ' +
+        'canonical_for is refused unless releaseCanonical is passed, because ownership does not ' +
+        'survive retirement. Everything else in the frontmatter is left exactly as written. A note in _inbox/ is refused: use bank_promote, which places ' +
+        'it and sets its status in one step.',
+      inputSchema: {
+        path: z.string().describe('Bank-relative path of an existing document'),
+        status: z.string().min(1).describe('The status to move it to, from the values dna/ declares'),
+        releaseCanonical: z
+          .boolean()
+          .optional()
+          .describe(
+            'Give up canonical_for as part of archiving. Required when archiving a document that ' +
+              'owns keys: an archived owner blocks whoever should own them next.',
+          ),
+        dryRun: z.boolean().optional().describe('Report what would change without writing'),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true },
+    },
+    async (input) => {
+      await bank.refresh()
+      try {
+        return json(await setStatus(bank, input))
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }

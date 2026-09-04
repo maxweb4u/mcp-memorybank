@@ -162,3 +162,46 @@ describe('vocabulary the bank adds itself', () => {
     expect(termFor('банка').translations).toContain('bank')
   })
 })
+
+describe('the vocabulary of the product, not only of the bank', () => {
+  it('translates the ordinary nouns a product question is made of', () => {
+    // Measured on a real bank of 77 hand-written documents: every one of these returned an empty
+    // translation list, so "как устроен разбиение книги на страницы" routed to nothing at all while
+    // the same question in English routed correctly. The first dictionary layer was taken from the
+    // vocabulary of banks; a person asking in Russian asks about the thing the bank describes.
+    const cases: [string, string][] = [
+      ['книга', 'book'],
+      ['страницы', 'pagination'],
+      ['экран', 'screen'],
+      ['библиотека', 'library'],
+      ['текст', 'text'],
+      ['перевод', 'translation'],
+      ['пользователя', 'user'],
+      ['файлов', 'file'],
+      ['уведомления', 'notification'],
+      ['офлайн', 'offline'],
+    ]
+    for (const [ru, en] of cases) {
+      expect(termFor(ru).translations, `${ru} → ${en}`).toContain(en)
+    }
+  })
+
+  it('reads a dictionary as a dictionary, and a glossary as a glossary', () => {
+    // The entry said glossary and vocabulary, which is what `словарь` means inside a memory bank —
+    // and the wrong word entirely for a project whose feature is an offline dictionary.
+    expect(termFor('словарь').translations).toEqual(
+      expect.arrayContaining(['glossary', 'vocabulary', 'dictionary']),
+    )
+  })
+
+  it('splits the homonyms the longer key is there to separate', () => {
+    // RU_KEYS is sorted longest first, so these pairs resolve by construction rather than by luck.
+    expect(termFor('глава').translations).toEqual(['chapter'])
+    expect(termFor('главный').translations).toEqual(['main', 'primary'])
+    expect(termFor('удаление').translations).toEqual(['delete', 'deletion'])
+    expect(termFor('удаленный').translations).toEqual(['remote'])
+    expect(termFor('ответственность').translations).toEqual(['responsibility', 'ownership'])
+    expect(termFor('ответ').translations).toEqual(['response', 'answer'])
+    expect(termFor('словарь').translations).not.toContain('word')
+  })
+})
