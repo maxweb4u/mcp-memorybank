@@ -30,6 +30,12 @@ export interface BankDoc {
   derivedFrom: Edge[]
   canonicalFor: string[]
   mustNotDefine: string[]
+  /**
+   * Repository-relative paths in the code this document describes. Optional and hand-annotated;
+   * the only input `bank_drift` has, and the only way the server can tell a stale document from a
+   * merely old one.
+   */
+  anchors: string[]
   deliveryStatus?: string
   decisionStatus?: string
   /** Level-two headings, for section-scoped reads. */

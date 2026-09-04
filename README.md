@@ -107,11 +107,32 @@ in the whole bank and a cycle does not loop. Each edge lands in one of three out
 node), `external` (it leaves the bank root — in a monorepo, banks nest), or `broken`. `up` is what a
 document is built on; `down` is the blast radius of changing it.
 
+An external edge is followed exactly one hop: the target's frontmatter is read and returned under
+`neighbours`, and nothing else about it is. It is not indexed, not validated, not searchable, and its
+own edges are not walked. The boundary stays where it was — but in a monorepo those edges carry real
+decisions, and a blast radius that silently ends at the repository wall is wrong rather than partial.
+Pass `neighbours: false` to skip the reads.
+
+### Drift
+
+`bank_drift` answers the question validation cannot: not "is something missing" but "has what we
+wrote gone stale". A document that describes code lists it in `anchors:`, and the server compares the
+last commit that touched the document against the last commit that touched the code. Where the code
+is ahead by more than the threshold, it says so — and where an anchor points at a path that no longer
+exists, it always says so, because that is the code moving out from under the document.
+
+It never guesses which document owns which file. The pairing is hand-annotated or it does not exist,
+which means a bank that has not been annotated gets an honest empty answer and a note saying why. And
+it reports without editing: whether a six-month gap matters is not a judgement a timestamp can make.
+
 ### What it will not do
 
-It does not edit an existing document — every write is a new file. It does not promote anything out
-of `_inbox/` on its own. It does not invent a schema, and it does not enforce a rule the bank has not
-declared. And it does not cross the bank root: a reference that leaves is external, not broken.
+It does not create a document by editing — every new document goes through `bank_create`, so nothing
+enters the bank without a path check, a `derived_from` that resolves and an index entry. It does not
+promote anything out of `_inbox/` on its own. It does not invent a schema, and it does not enforce a
+rule the bank has not declared. It does not delete a document outside `_inbox/`. And it does not
+index, validate or search anything outside the bank root — the one hop `bank_graph` takes into a
+neighbouring bank reads a header and stops there.
 
 ## Running it
 
@@ -187,6 +208,7 @@ node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.m
 | `bank_read` | a whole document, one second-level section, or several documents in one call, under a byte budget |
 | `bank_validate` | checks the bank against the rules the bank itself declares in `dna/` |
 | `bank_graph` | walks `derived_from`: `down` — who depends on this (blast radius), `up` — what it is built on |
+| `bank_drift` | pairs each document against the code it declares in `anchors:` and reports where the code is ahead |
 | `bank_search` | full-text search over document bodies — identifiers, names, literals |
 | `bank_changed` | what changed since a git ref or an ISO date; a ref older than the repository lands on its first commit, and a bank with no repository at all answers with everything |
 | `bank_init` | creates a bank from nothing: skeleton, `dna/`, templates, section indexes |

@@ -14,8 +14,9 @@ audience: humans_and_agents
 The implementation plan is closed: [implementation-plan.md](implementation-plan.md), E0…E5 plus the
 quarantine. This is what fell outside it.
 
-Not included here: fixing the 321 validator findings across nineteen banks — that is separate work,
-and it is on hold until the field test is done.
+Not included here: fixing the 321 validator findings across nineteen banks — that is separate work.
+A-04 no longer blocks it, but it stays queued behind the owner's word: the existing banks are not
+touched on this server's initiative.
 
 ## A. Rollout — work in the banks, not in this repository
 
@@ -66,20 +67,35 @@ is more honest if the review is de facto not happening.
 other three the rule was already there and only the path needed fixing. `unresolved-rule-reference`
 went to 0 everywhere.
 
-*(Note: these edits were subsequently reverted at the owner's request — nothing in the existing banks
-changes until the field test is done. The finding and the fix stand; applying them is queued behind
-A-04.)*
+*(Note: these edits were subsequently reverted at the owner's request. The finding and the fix stand;
+A-04 is now closed, so applying them waits only on the owner saying which banks may be touched.)*
 
-### A-04. Connect the server to a project and live with it
+### A-04. Connect the server to a project and live with it — **done**
 
-The server has never run in a live session. Until it has, we do not know whether `bank_route` lands
-on what is actually needed in real work, as opposed to the control questions from the plan.
+Ran 14 August – 5 September on four projects, not the one that was planned: `ebook_parser` and
+`tasman/research` built from nothing, `readtolearn/frontend` an existing hand-written bank of 88
+documents, and `idelo` a bank built backwards out of a released app.
 
-The test bed is chosen: `__my/modules/ebook_parser` — a new project where the bank has to be built
-from nothing. Detailed plan and criteria — [field-test.md](field-test.md).
+Twenty-four findings, F-10 through F-33, none reachable by the test suite — each was a capability
+that did not exist rather than a behaviour that was wrong. `bank_read` taking a list, a `body` on
+`bank_create`, `bank_update_section`, `bank_discard`, `bank_edit`, `bank_set_status`,
+`contentFile`/`bodyFile`, the read budget, two `bank_changed` fallbacks and the second dictionary
+layer all come from it. One pattern underneath all of them: **the shell wins whenever the governed
+call costs more than the ungoverned one.** Shell calls on one bank went 85 → 129 → 6 as the fixes
+landed.
 
-**Done when:** the six numbers from the "What counts as a result" section are collected over a day of
-work.
+Five of the six numbers came back inside their thresholds. The sixth — whether `bank_route` lands on
+what is needed — **could not be measured**, and that is itself the finding (F-13): on a bank small
+enough to `cat` whole, routing competes with "already in context" and loses by default. It needs a
+corpus too large to read.
+
+The test also answered the objection it raised — that an 88-line `CLAUDE.md` might do the same job.
+Pre-registered, two arms, same week: the server is what makes a bank hold (instructions cannot check
+anything), and the paragraph is what makes the choice consistent (without it, an agent calling
+`bank_edit` thirty times still made seven shell writes into its own bank).
+
+Full write-up — [field-test.md](field-test.md); the session-by-session record —
+[field-test-journal.md](field-test-journal.md).
 
 ### A-05. Verify the Stop hook actually loads — **done**
 
@@ -161,15 +177,28 @@ when it closes. Mechanical work with no judgement involved, but it needs a link 
 The motive in numbers: `archived` is set on about **4% of documents** — de facto nobody performs
 the archiving step, even though `feature-flow.md` prescribes it.
 
-### B-03. A code-versus-document drift detector
+### B-03. A code-versus-document drift detector — **done**
 
 An anchor field in the header: "the fact `filter_thresholds` lives in `src/filter/config.ts`". The
 server then surfaces suspicious pairs: the code was touched, the owning document has not been touched
-in three months.
+in three months. It invents nothing, it only shows. On usefulness this was the most valuable item in
+list B: the main failure of a knowledge base is not that something went unwritten — `bank_validate`
+already catches that — but that what was written went quietly stale, which no rule inside the bank
+can see, because nothing inside the bank knows the code exists.
 
-It invents nothing, it only shows. On usefulness this is, in my view, the most valuable item in list
-B: the main failure of a knowledge base is not that something went unwritten, but that what was
-written went quietly stale. Requires the anchors to be annotated.
+**Done.** `anchors:` in the frontmatter, `bank_drift` reading it. One pass over `git log` for every
+anchor and every anchored document at once, then two dates and the gap between them. Default
+threshold 90 days, `scope` to narrow it.
+
+Three decisions worth keeping straight:
+
+- **It never guesses the pairing.** No path heuristics, no name matching, no reading the prose for
+  file references. The annotation is the input; without it a document is invisible to the tool.
+  A detector that guesses is a detector nobody trusts, and false drift is worse than no drift.
+- **It reports `unanchored` next to `anchored`.** An unannotated bank would otherwise return a clean
+  empty result, which reads as "no drift" and means "no data".
+- **A missing anchor is always reported**, whatever the threshold. Code that was deleted or moved out
+  from under a document is not a matter of degree.
 
 ### B-04. Syncing `dna/` between banks
 
@@ -242,18 +271,24 @@ reference to a nonexistent `testing-policy.md`, and the `doc_kind`/`doc_function
 governance lagging behind what the set itself uses (`process`, `prompt`, `epic`, `feature-support`
 and `reference` were not declared).
 
-### B-06. Graph traversal across the bank boundary
+### B-06. Graph traversal across the bank boundary — **done**
 
 The "not multi-project" decision from §8 of the spec stays right for indexing and validation, but it
-has a cost that is only visible now: **`bank_graph` stops at the bank boundary**, and in the nested
-banks of a monorepo the answer to "what breaks" is knowingly incomplete. Across the banks I measured there are 35 such edges, and one project alone has three nested banks
-whose links to each other are real.
+had a cost that only the field test made visible: **`bank_graph` stopped at the bank boundary**, and
+in the nested banks of a monorepo the answer to "what breaks" was knowingly incomplete. Across the
+banks I measured there are 35 such edges; `readtolearn` alone has 15, six of them pointing at the two
+ADRs that decide what its server is.
 
-A full multi-root is not needed. The cheap intermediate step: resolve an external edge into the
-neighbouring bank **for graph traversal only** — read the target file's header, without indexing or
-validating it. One directory up, one read.
+**Done.** `resolveNeighbours` follows an external edge exactly one hop and reads the target's
+frontmatter — title, `doc_kind`, `status`, `purpose`, `canonical_for`. Nothing else happens to it: it
+is not indexed, not validated, not searchable, and its own edges are not walked. `bank_graph` returns
+these under `neighbours` by default; `neighbours: false` skips the reads, and an empty `external`
+costs nothing at all.
 
-On usefulness this ranks above B-04 and B-05.
+Two limits keep it from becoming a workspace crawler by accident: it will not read above three
+directory levels from the bank root, and it stops after 25 targets. A path that resolves to nothing
+comes back marked broken rather than external — which is a distinction the old output could not
+draw, since both looked like a bare string.
 
 ## C. Publishing
 

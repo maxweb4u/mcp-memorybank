@@ -151,12 +151,33 @@ valid answer.
 ### `bank_graph`
 
 ```ts
-{ path: string, direction: 'up' | 'down' | 'both', depth?: number /* =2 */ }
-→ { nodes: { path, title, docKind }[], edges: { from, to, fit? }[] }
+{ path: string, direction: 'up' | 'down' | 'both', depth?: number /* =2 */, neighbours?: boolean /* =true */ }
+→ { nodes: { path, title, docKind }[], edges: { from, to, fit? }[],
+    external: { from, raw }[], neighbours: { from, raw, file, title?, docKind?, canonicalFor? }[] }
 ```
 
 `up` — what the document rests on, `down` — what breaks if it changes. The second is the
 main scenario: "I am changing this threshold, what else do I have to touch".
+
+Edges that leave the bank root are followed one hop, header only — §8's "not multi-project" decision
+holds for indexing and validation, but a monorepo puts real decisions on the other side of the wall,
+and reporting the edge as an opaque string made the blast radius wrong rather than incomplete.
+
+### `bank_drift`
+
+```ts
+{ thresholdDays?: number /* =90 */, scope?: string }
+→ { mode: 'git' | 'none', anchored: number, unanchored: number,
+    drifted: { path, anchor, docTouched, codeTouched, aheadDays }[],
+    missing: { path, anchor }[], note?: string }
+```
+
+The only tool here that reads outside the bank, and the only one whose input the bank does not
+already carry: a document declares `anchors:` — repository-relative code paths — and the server
+compares commit dates. It never infers the pairing from content, because a drift detector that
+guesses is one nobody trusts, and it never edits: whether a gap matters is not a judgement a
+timestamp can make. `unanchored` is reported alongside, since an unannotated bank is invisible to it
+and should say so rather than return a clean-looking empty result.
 
 ### `bank_validate`
 

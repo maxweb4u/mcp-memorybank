@@ -168,6 +168,7 @@ export function parseDoc(bankRelativePath: string, raw: string, mtimeMs: number)
     derivedFrom: [],
     canonicalFor: [],
     mustNotDefine: [],
+    anchors: [],
     sections: [],
     registeredIn: [],
     fields: [],
@@ -199,6 +200,9 @@ export function parseDoc(bankRelativePath: string, raw: string, mtimeMs: number)
   base.derivedFrom = parseEdges(bankRelativePath, data['derived_from'])
   base.canonicalFor = asStringList(data['canonical_for']).map((s) => s.trim())
   base.mustNotDefine = asStringList(data['must_not_define']).map((s) => s.trim())
+  base.anchors = asStringList(data['anchors'])
+    .map((s) => s.trim().replace(/^\.?\//, ''))
+    .filter(Boolean)
 
   // `title` is missing on ~26% of real documents; fall back to the first H1, then the filename.
   base.title = str('title') || firstHeading(body) || path.posix.basename(bankRelativePath, '.md')

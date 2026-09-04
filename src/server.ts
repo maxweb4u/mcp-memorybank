@@ -6,9 +6,10 @@ import type { Bank } from './bank.js'
 import { route } from './route.js'
 import { read, readMany } from './read.js'
 import { RULES, validate } from './validate.js'
-import { graph } from './graph.js'
+import { graph, resolveNeighbours } from './graph.js'
 import { SearchIndex, search } from './search.js'
 import { changed } from './changed.js'
+import { drift } from './drift.js'
 import { create, discard, inbox, promote } from './create.js'
 import { init } from './init.js'
 import { edit, setStatus, updateSection } from './update.js'
@@ -398,6 +399,39 @@ export async function startServer(bank: Bank): Promise<void> {
   )
 
   server.registerTool(
+    'bank_drift',
+    {
+      title: 'Where the code has moved on without the document',
+      description:
+        'Compares the last commit that touched a document against the last commit that touched the code it ' +
+        'claims to describe, and reports the pairs where the code is ahead. Reads only the `anchors:` list a ' +
+        'document declares in its own frontmatter, so it never guesses which document owns which file — ' +
+        'a document with no anchors is invisible to it. It reports and never edits: the judgement of whether ' +
+        'a gap matters is not one a timestamp can make. Anchors pointing at a path that no longer exists are ' +
+        'always reported, whatever the threshold, because that is the code moving out from under the document.',
+      inputSchema: {
+        thresholdDays: z
+          .number()
+          .int()
+          .min(0)
+          .max(3650)
+          .optional()
+          .describe('How far the code may be ahead before it counts as drift (default 90)'),
+        scope: z.string().optional().describe('Restrict to one subdirectory, e.g. "engineering"'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ thresholdDays, scope }) => {
+      await bank.refresh()
+      try {
+        return json(await drift(bank, { thresholdDays, scope }))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  server.registerTool(
     'bank_graph',
     {
       title: 'Walk the derived_from graph',
@@ -405,7 +439,10 @@ export async function startServer(bank: Bank): Promise<void> {
         'Answers "what else must I touch". `down` returns the documents that lean on this one — the blast ' +
         'radius of a change; `up` returns what it is built on. The link exists only as a one-way field in each ' +
         "document's frontmatter, so the downstream direction cannot be read from any single file. " +
-        'Edges carry `fit` where the bank narrows what is actually inherited.',
+        'Edges carry `fit` where the bank narrows what is actually inherited. ' +
+        'Edges that leave the bank are listed under `neighbours` with the target document\'s header, ' +
+        'read one hop out and no further — in a monorepo those edges are real, and stopping at the ' +
+        'boundary would make the blast radius wrong rather than merely partial.',
       inputSchema: {
         path: z.string().describe('Bank-relative path of the document to start from'),
         direction: z
@@ -414,13 +451,19 @@ export async function startServer(bank: Bank): Promise<void> {
           .describe('down = who depends on it (default), up = what it depends on'),
         depth: z.number().int().min(1).max(6).optional().describe('How many hops to follow (default 2)'),
         limit: z.number().int().min(1).max(300).optional().describe('Maximum documents to return (default 60)'),
+        neighbours: z
+          .boolean()
+          .optional()
+          .describe('Read the header of each document an external edge points at (default true)'),
       },
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ path: docPath, direction, depth, limit }) => {
+    async ({ path: docPath, direction, depth, limit, neighbours }) => {
       await bank.refresh()
       try {
-        return json(graph(bank, docPath, { direction, depth, limit }))
+        const result = graph(bank, docPath, { direction, depth, limit })
+        if (neighbours === false) return json(result)
+        return json({ ...result, neighbours: await resolveNeighbours(bank, result.external) })
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }

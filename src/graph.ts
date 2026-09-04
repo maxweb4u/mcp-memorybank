@@ -1,5 +1,8 @@
+import fs from 'node:fs/promises'
+import nodePath from 'node:path'
 import type { Bank } from './bank.js'
 import type { Layer } from './types.js'
+import { lenientFrontmatter } from './parse.js'
 
 export type Direction = 'up' | 'down' | 'both'
 
@@ -151,4 +154,96 @@ export function graph(bank: Bank, docPath: string, opts: GraphOptions = {}): Gra
     byLayer,
     truncated,
   }
+}
+
+/**
+ * One document in a neighbouring bank, read for the graph and nothing else.
+ *
+ * The bank boundary is real: nothing here is indexed, validated, routed or searched. But in a
+ * monorepo the `derived_from` edges that cross it are real too, and stopping at the boundary makes
+ * "what else must I touch" knowingly incomplete. So the header — and only the header — is read.
+ */
+export interface Neighbour {
+  /** The document in this bank that declares the edge. */
+  from: string
+  /** Exactly as written in the frontmatter. */
+  raw: string
+  /** Where the edge points, relative to the directory the search was allowed to reach. */
+  file: string
+  title?: string
+  docKind?: string
+  status?: string
+  purpose?: string
+  /** What the neighbour claims to own, which is the usual reason the edge exists. */
+  canonicalFor?: string[]
+  /** Set instead of the header fields when the target could not be read. Says which. */
+  unreadable?: string
+}
+
+/** How far above the bank root an external edge may reach. Two is what a monorepo needs; three is slack. */
+const NEIGHBOUR_CEILING = 3
+
+/** Reading headers is cheap, but an unbounded fan-out into a workspace is not. */
+const MAX_NEIGHBOURS = 25
+
+/**
+ * Resolves the external edges of a graph result one hop, by reading each target's frontmatter.
+ *
+ * Kept out of {@link graph} on purpose: that function is pure and synchronous, and every caller that
+ * does not want to touch the disk should keep being able to call it.
+ */
+export async function resolveNeighbours(
+  bank: Bank,
+  external: { from: string; raw: string }[],
+): Promise<Neighbour[]> {
+  if (external.length === 0) return []
+
+  const ceiling = nodePath.resolve(bank.root, '../'.repeat(NEIGHBOUR_CEILING))
+  const out: Neighbour[] = []
+
+  for (const edge of external.slice(0, MAX_NEIGHBOURS)) {
+    const target = edge.raw.split('#')[0]!.trim()
+    const abs = nodePath.resolve(nodePath.dirname(bank.abs(edge.from)), target)
+    const shown = nodePath.relative(ceiling, abs) || abs
+
+    const record: Neighbour = { from: edge.from, raw: edge.raw, file: shown }
+    out.push(record)
+
+    const inside = abs === ceiling || abs.startsWith(ceiling + nodePath.sep)
+    if (!inside) {
+      record.unreadable = `outside the ${NEIGHBOUR_CEILING} directory levels above this bank, so it was not read`
+      continue
+    }
+    if (!abs.endsWith('.md')) {
+      record.unreadable = 'not a markdown file'
+      continue
+    }
+
+    let raw: string
+    try {
+      raw = await fs.readFile(abs, 'utf8')
+    } catch {
+      record.unreadable = 'no such file — the edge is broken, not merely external'
+      continue
+    }
+
+    const { data } = lenientFrontmatter(raw)
+    const str = (key: string): string | undefined => {
+      const value = data[key]
+      return typeof value === 'string' && value.trim() ? value.trim() : undefined
+    }
+    record.title = str('title') ?? nodePath.basename(abs, '.md')
+    record.docKind = str('doc_kind')
+    record.status = str('status')
+    record.purpose = str('purpose')
+    const owns = data['canonical_for']
+    if (Array.isArray(owns)) {
+      const keys = owns.filter((k): k is string => typeof k === 'string').map((k) => k.trim())
+      if (keys.length > 0) record.canonicalFor = keys
+    } else if (typeof owns === 'string' && owns.trim()) {
+      record.canonicalFor = [owns.trim()]
+    }
+  }
+
+  return out
 }

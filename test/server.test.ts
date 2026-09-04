@@ -25,6 +25,7 @@ describe('stdio server', () => {
         'bank_changed',
         'bank_create',
         'bank_discard',
+        'bank_drift',
         'bank_edit',
         'bank_graph',
         'bank_init',
@@ -87,6 +88,7 @@ describe('stdio server', () => {
       })
       const g = JSON.parse((walked.content as { text: string }[])[0]!.text)
       expect(g.nodes.map((n: { path: string }) => n.path)).toContain('features/FT-001/brief.md')
+      expect(g.neighbours).toEqual([])
 
       const found = await client.callTool({ name: 'bank_search', arguments: { query: 'rejects below 60' } })
       const results = JSON.parse((found.content as { text: string }[])[0]!.text).results

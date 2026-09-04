@@ -21,6 +21,7 @@ status: active
 | `derived_from` | Upstream-document exists | Direct upstream-dependencies. Each element — string (path) or object `{path, fit}`, where `fit` explains scope of dependency |
 | `delivery_status` | Lifecycle-owning feature document (`brief.md` in v2; legacy `feature.md` until migrated) | `planned` / `in_progress` / `done` / `cancelled` |
 | `decision_status` | ADR-documents | `proposed` / `accepted` / `superseded` / `rejected` |
+| `anchors` | The document describes code | Repository-relative paths the document is about, e.g. `src/filter/config.ts` or a directory. Read by `bank_drift` to compare the document's last commit against the code's; nothing else uses it, and a document without it is simply invisible to that check |
 
 ## Additional
 
