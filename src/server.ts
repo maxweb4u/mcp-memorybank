@@ -112,11 +112,14 @@ export async function startServer(bank: Bank): Promise<void> {
     {
       title: 'Create a bank where there is none',
       description:
-        'Seeds an empty root with the fourteen-directory skeleton, the governance set (dna/), the flows and ' +
-        'templates, one registered index per section, and draft stubs for the two documents the flow refers ' +
-        'to. Everything written becomes the bank\'s own — the starter is a starting point, not a schema the ' +
-        'server keeps enforcing. A bank created this way validates clean; refuses to seed over existing ' +
-        'documents unless force is passed.',
+        'Seeds an empty root: the governance set in dna/ (including the table that assigns each directory ' +
+        'its layer), the four flow documents, a registered index for each of the eight sections, and draft ' +
+        'stubs for the two documents the flow refers to — 24 files. Three further sections (epics, prd, ' +
+        'prompts) are not created in advance; bank_create builds one the first time a document needs it. ' +
+        'The document templates are not copied either: they ship with the server and bank_create reads them ' +
+        'from there, so nothing is missing without them. Everything written becomes the bank\'s own — the ' +
+        'starter is a starting point, not a schema the server keeps enforcing. A bank created this way ' +
+        'validates clean; refuses to seed over existing documents unless force is passed.',
       inputSchema: {
         name: z.string().min(1).describe('Project name, used in the root index'),
         dryRun: z.boolean().optional().describe('List what would be written without writing it'),
@@ -139,11 +142,14 @@ export async function startServer(bank: Bank): Promise<void> {
     {
       title: 'Create a governed document',
       description:
-        "Creates a document from the bank's own template, writes the frontmatter the contract asks for, and " +
-        'registers it in the section index — one operation, so the registration step cannot be forgotten. ' +
-        'Refuses to write when the path is taken, when a derived_from target does not resolve, or when ' +
-        'canonical_for is already owned elsewhere. Pass dryRun to see what would land before it lands. ' +
-        'Use inbox for a capture that has not been reviewed yet: it goes to _inbox/ as a draft, outside navigation.',
+        "Creates a document from a template, writes the frontmatter the contract asks for, and registers it " +
+        'in the section index — one operation, so the registration step cannot be forgotten. The template ' +
+        "comes from the bank's own flows/templates/ when it has one and from the set the server ships when " +
+        'it does not. If the section itself does not exist yet, it is created along with its index and its ' +
+        'entry in the root index, and a warning says so. Refuses to write when the path is taken, when a ' +
+        'derived_from target does not resolve, or when canonical_for is already owned elsewhere. Pass dryRun ' +
+        'to see what would land before it lands. Use inbox for a capture that has not been reviewed yet: it ' +
+        'goes to _inbox/ as a draft, outside navigation.',
       inputSchema: {
         docKind: z.string().describe('doc_kind of the new document, e.g. "adr"'),
         path: z.string().describe('Bank-relative path, e.g. "adr/ADR-20260829T120000Z-short-name.md"'),
@@ -401,14 +407,15 @@ export async function startServer(bank: Bank): Promise<void> {
   server.registerTool(
     'bank_materialize_flows',
     {
-      title: 'Take ownership of the flows and templates',
+      title: 'Take ownership of the document templates',
       description:
-        'Copies the flows and document templates the server ships into this bank, which then owns them. ' +
-        'Only needed when a project genuinely means to change a procedure: by default the bank carries a ' +
-        'pointer instead of a copy, and `bank_create` reads the shipped templates, so nothing is missing ' +
-        'without this. Refuses when flows/ already holds documents of its own, unless force says otherwise.',
+        'Copies the document templates the server ships into this bank, which then owns them. Only needed ' +
+        'when a project genuinely means to change a template: by default flows/templates/ holds a pointer ' +
+        'instead of copies, and bank_create reads the shipped set, so nothing is missing without this. The ' +
+        'flows themselves (feature-flow, epic-flow, workflows) are already in the bank and are not touched. ' +
+        'Refuses when flows/templates/ already holds documents of its own, unless force says otherwise.',
       inputSchema: {
-        force: z.boolean().optional().describe('Overwrite flows the bank already customised'),
+        force: z.boolean().optional().describe('Overwrite templates the bank already customised'),
       },
       annotations: { destructiveHint: false, idempotentHint: false },
     },

@@ -21,7 +21,7 @@ exercises both halves of the server: writing first, then navigating what was wri
 
 ## What is actually being tested
 
-Not "do the tools work" — that is covered by 140 tests. Three things the tests cannot show:
+Not "do the tools work" — that is covered by the test suite (140 at the time; 271 now). Three things the tests cannot show:
 
 1. **Does `bank_route` land on what is needed in real work**, rather than on the control questions I
    invented myself.
@@ -41,6 +41,10 @@ One command: 14 directories, `dna/` with seven governance documents, `flows/` wi
 `README.md` per section, a root index carrying the project name, and two drafts —
 `product/context.md` and `engineering/testing-policy.md` — which the templates and the feature
 closure gate both point at.
+
+*(That was 50 files. The seeded shape is 24 now — three sections build on first use and the templates
+are pointed at rather than copied. See [architecture.md](architecture.md); the numbers below were
+taken against the shape described here.)*
 
 Check immediately after: `--validate` must give **0 findings**. A bank created by the server is clean
 by construction — which is exactly why we seed rather than copy someone else's bank: a copy would

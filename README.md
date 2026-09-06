@@ -248,19 +248,25 @@ choice consistent. Neither substitutes for the other — see [field-test.md](fie
 
 ## Debugging from the terminal
 
+The CLI is a read-mostly subset for looking at a bank without an agent in the loop, not a mirror of
+the tool surface: `bank_drift`, `bank_edit`, `bank_update_section`, `bank_set_status` and
+`bank_discard` are MCP-only. Installed from npm the command is `mcp-memorybank`; from a clone it is
+`node dist/cli.js`.
+
 ```bash
-node dist/cli.js --root <bank> --stats
-node dist/cli.js --root <bank> --route "filter thresholds" --limit 5
-node dist/cli.js --root <bank> --read domain/rules.md --section Thresholds
-node dist/cli.js --root <bank> --validate --summary
-node dist/cli.js --root <bank> --validate --rule broken-derived-from
-node dist/cli.js --root <bank> --graph domain/rules.md --direction down --depth 1
-node dist/cli.js --root <bank> --search "FT-042" --limit 5
-node dist/cli.js --root <bank> --changed HEAD~5
-node dist/cli.js --root <bank> --create adr/ADR-...-name.md --kind adr --title "..." --purpose "..." --derived ../engineering/architecture.md --dry-run
-node dist/cli.js --root <new-path> --init "Project Name" --dry-run
-node dist/cli.js --root <bank> --list-inbox
-node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.md --derived ../dna/principles.md --dry-run
+mcp-memorybank --root <bank> --stats
+mcp-memorybank --root <bank> --route "filter thresholds" --limit 5
+mcp-memorybank --root <bank> --read domain/rules.md --section Thresholds
+mcp-memorybank --root <bank> --validate --summary
+mcp-memorybank --root <bank> --validate --rule broken-derived-from
+mcp-memorybank --root <bank> --graph domain/rules.md --direction down --depth 1
+mcp-memorybank --root <bank> --search "FT-042" --limit 5
+mcp-memorybank --root <bank> --changed HEAD~5
+mcp-memorybank --root <bank> --create adr/ADR-...-name.md --kind adr --title "..." --purpose "..." --derived ../engineering/architecture.md --dry-run
+mcp-memorybank --root <new-path> --init "Project Name" --dry-run
+mcp-memorybank --root <bank> --materialize-flows
+mcp-memorybank --root <bank> --list-inbox
+mcp-memorybank --root <bank> --promote _inbox/note.md --to engineering/thing.md --derived ../dna/principles.md --dry-run
 ```
 
 ## What is there
@@ -274,7 +280,8 @@ node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.m
 | `bank_drift` | pairs each document against the code it declares in `anchors:` and reports where the code is ahead |
 | `bank_search` | full-text search over document bodies — identifiers, names, literals |
 | `bank_changed` | what changed since a git ref or an ISO date; a ref older than the repository lands on its first commit, and a bank with no repository at all answers with everything |
-| `bank_init` | creates a bank from nothing: skeleton, `dna/`, templates, section indexes |
+| `bank_init` | creates a bank from nothing: skeleton, `dna/`, the flows, section indexes |
+| `bank_materialize_flows` | copies the shipped document templates into the bank, which then owns them |
 | `bank_create` | creates a document from the bank's own template and registers it in the index, with gates and `_inbox` |
 | `bank_edit` | replaces one exact fragment of a body — a table row, a step, a heading; refuses an ambiguous match |
 | `bank_update_section` | writes the body of one named section of an existing document, leaving everything else alone |
@@ -305,16 +312,20 @@ send it, the agent read the whole bank. Hence `session-start`.
 ### Creating a bank
 
 ```bash
-node dist/cli.js --root <new-path> --init "Project Name"
+mcp-memorybank --root <new-path> --init "Project Name"
 ```
 
-Lays out 14 directories, drops in `dna/` (7 governance documents) and `flows/` with 23 templates,
-generates a `README.md` for every section plus the root index, and seeds two drafts —
-`product/context.md` and `engineering/testing-policy.md` — which the templates and the feature
-closure gate both point at.
+Writes 24 files: `dna/` (8 governance documents, including the layer table), the four flow
+documents, an index for each of the eight seeded sections plus the root index, a pointer where the
+templates would be, and two drafts — `product/context.md` and `engineering/testing-policy.md` —
+which the templates and the feature closure gate both point at.
+
+Three further sections — `epics/`, `prd/`, `prompts/` — are not created in advance. `bank_create`
+builds one, its index and its root-index entry the first time a document needs it, and says so.
 
 The starter set lives in `starter/` and belongs to the bank the moment it is copied: rewrite it
-however you like, the server does not keep imposing it.
+however you like, the server does not keep imposing it. What is *not* copied is
+`flows/templates/` — see [What a seeded bank contains](#what-a-seeded-bank-contains).
 
 **A freshly created bank validates with zero findings** — which is the whole point of `bank_init`
 rather than copying someone else's bank: a copy would bring that bank's defects along with it.
@@ -372,7 +383,8 @@ reads any more. Archiving an owner is therefore refused unless `releaseCanonical
 keys are dropped as part of the same write. Measured, again: a session archived a document and
 stripped the block with a python regex, because that was the only way to do it at all.
 
-`bank_create` takes the template from the bank's own `flows/templates/`. Templates there are
+`bank_create` takes the template from the bank's own `flows/templates/` when it has one, and from
+the set the server ships when it does not. Templates are
 wrappers: the document to instantiate sits inside them as two blocks under
 `## Instantiated Frontmatter` and `## Instantiated Body`. The server unwraps exactly those,
 substitutes the title, fills the date placeholder, and carries over `must_not_define`, which the
@@ -463,6 +475,7 @@ file is not seeded by `bank_init`: a bank that does not need one should not carr
 | `unknown-enum-value` | warning | a `doc_kind` / `doc_function` / `status` outside what `dna/` declares |
 | `unregistered-doc` | warning | a document no index links to — unreachable by navigation |
 | `unresolved-rule-reference` | warning | prose citing a rule by a path that does not resolve |
+| `unknown-layer-value` | warning | the layer table in `dna/` names a layer that does not exist; the row is ignored |
 | `no-contract` | warning | the bank has no `dna/`, so contract rules cannot run |
 
 The order is not alphabetical: it is descending by how often each rule fired while the validator was

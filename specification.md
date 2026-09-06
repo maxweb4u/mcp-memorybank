@@ -9,7 +9,11 @@ audience: humans_and_agents
 
 # An MCP server over memory_bank
 
-Specification. No code.
+Specification. Written before any code, and kept as written — it is the record of what was designed,
+not a description of what exists. **Where the two disagree, the built thing is
+[README.md](README.md), and [what the build departed from](#12-where-the-build-departed-from-this-spec)
+at the end says how.** Section 8, the list of things the server deliberately does not do, is the one
+part that has been kept current, because it is a live constraint rather than a plan.
 
 ## 1. The problem
 
@@ -100,8 +104,10 @@ needed.
 
 ## 4. Tools
 
-Eight of them. Every parameter is validated with `zod`, and the schema is exposed to MCP
-as JSON Schema.
+Eight, as designed. Fifteen were built — the seven extra came out of the field test, and
+[README.md](README.md) lists them all. `bank_owner` below was designed and deliberately never built.
+
+Every parameter is validated with `zod`, and the schema is exposed to MCP as JSON Schema.
 
 ### `bank_route`
 
@@ -136,9 +142,11 @@ Full-text search, for when routing is not enough.
 `section` returns one second-level heading with its body. On large canonical documents
 that is the difference between 200 lines and 20.
 
-### `bank_owner`
+### `bank_owner` — never built
 
-The SSoT query: who owns a fact.
+The SSoT query: who owns a fact. Dropped after measurement: `canonical_for` is filled in on 29% of
+documents across the banks measured, with a single conflict in all of them. Ownership is reported
+inside `bank_route` and `bank_validate`, where it costs nothing to carry.
 
 ```ts
 { key: string }   // e.g. 'filter_thresholds'
@@ -225,9 +233,13 @@ For carrying state between sessions: what changed since last time.
 | URI | Contents |
 |---|---|
 | `memorybank://index` | Annotated index: path, `purpose`, `doc_kind`, `status` for every document |
-| `memorybank://doc/{path}` | A whole document |
 | `memorybank://schema/frontmatter` | The frontmatter contract — so the agent does not guess at fields |
 | `memorybank://health` | A fresh `bank_validate` run |
+| `memorybank://inbox` | What is waiting in the quarantine — built, not designed here |
+
+`memorybank://doc/{path}` was designed and not built: `bank_read` takes a path and a section, which
+is the same access with a budget attached, and a second way in would have been a second way to pull
+a whole document into context.
 
 `memorybank://index` is what the agent reads first in a session, instead of `README.md`.
 
@@ -235,9 +247,11 @@ For carrying state between sessions: what changed since last time.
 
 | Name | Purpose |
 |---|---|
+| `session-start` | Orient at the top of a session: what the bank is, what moved since last time |
 | `route-then-read` | `bank_route` first, then `bank_read` on the top results only. Discipline against reading everything |
 | `record-adr` | Assemble an ADR: context, drivers, options table, decision, consequences. The format has settled across four projects |
 | `check-before-commit` | Run `bank_validate` and explain every error |
+| `review-inbox` | Go through the quarantine: promote, fold in, or discard |
 
 ## 7. Stack
 
@@ -263,16 +277,26 @@ One process per project. Client configuration is an ordinary `mcpServers` entry.
 
 Written down so that future work does not drift in here.
 
-- **It does not edit existing documents.** Editing content is the agent's job with its
-  ordinary tools. The server owns creation and registration only.
+- ~~**It does not edit existing documents.**~~ **Reversed, on measurement.** This was the design and
+  it was wrong: five of eleven writes in one measured session changed a few lines, and every one of
+  them went through a shell, outside every gate. `bank_edit`, `bank_update_section` and
+  `bank_set_status` now cover them. What holds instead: **the server does not create a document by
+  editing** — a new document goes through `bank_create` or it does not enter the bank.
 - **It keeps no state between sessions.** The index is derived from the files and can be
   rebuilt from scratch at any moment.
 - **No embeddings.** The corpus is small, and `purpose` is a hand-written signal of
   higher quality than an embedding of prose. Revisit if a bank passes a thousand
   documents and `bank_route` starts missing.
-- **Not multi-project.** One root per process. Cross-project search is a separate problem
-  with different requirements.
+- **Not multi-project.** One root per process. Cross-project search is a separate problem with
+  different requirements. One narrow exception, added on measurement: `bank_graph` follows an edge
+  that leaves the bank exactly one hop and reads the target's header, because in a monorepo those
+  edges carry real decisions and a blast radius that ends at the repository wall is wrong rather than
+  partial. Nothing outside the root is indexed, validated or searched.
 - **It does not replace git.** History, authorship and rollback stay with git.
+- **It does not delete a document outside `_inbox/`.** `bank_discard` clears a consumed note from the
+  quarantine and needs a reason; removing a canonical document is not something this server learns.
+- **It does not write on its own initiative.** The end-of-session hook asks; what it collects lands in
+  the quarantine, and only a human promotes it out.
 
 ## 9. Stages
 
@@ -297,3 +321,32 @@ E1 and E2 are self-sufficient — if it goes no further, the value is already th
 4. **Whether to publish.** The server contains nothing project-specific and solves a
    problem that is not only the author's. A candidate for a public repository — see the
    question about filling out GitHub.
+
+## 11. What became of the open questions
+
+1. **`canonical_for` is not filled in everywhere.** Confirmed: 29% across the banks measured, with a
+   single conflict. That is why `bank_owner` was never built — ownership is reported inside
+   `bank_route` and `bank_validate` instead, where it costs nothing to carry.
+2. **`registeredIn` from parsing markdown links.** Both forms are covered, and numbered lists and
+   table rows besides; `registerLine` copies the shape of whatever the index already uses.
+3. **`stale-draft` needs a date.** Dropped as a rule, and answered from a different direction:
+   `bank_drift` compares commit dates for a document against the code it declares in `anchors:`.
+   Git has the dates; the frontmatter did not need a field.
+4. **Whether to publish.** Yes. MIT, public repository, C-01 done and C-02 verified —
+   [backlog.md](backlog.md).
+
+## 12. Where the build departed from this spec
+
+Each of these was a measurement, not a change of mind. The record is in
+[field-test.md](field-test.md) and [architecture.md](architecture.md).
+
+| Designed here | Built | Why |
+|---|---|---|
+| eight tools | fifteen | seven capabilities the field test found missing, each after real work hit the gap |
+| `bank_owner` | never built | `canonical_for` sits at 29% with one conflict; ownership rides inside routing and validation |
+| creation only, no editing | `bank_edit`, `bank_update_section`, `bank_set_status` | most writes are smaller than a document, and every one of them was going through a shell |
+| stops at the bank root | one hop for `bank_graph` | a monorepo puts real decisions on the other side of the wall |
+| — | `bank_drift` | validation cannot see the failure that matters most: what was written going stale |
+| layers fixed in the server | declared in `dna/` | it was the one rule the server imposed rather than read, and it failed silently |
+| eleven sections seeded | eight, the rest on first use | three were index-only in all four banks measured |
+| templates copied into each bank | pointed at, with `bank_create` falling through | 140 KB identical in every bank, customised in none, and copies fork |

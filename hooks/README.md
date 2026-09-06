@@ -103,8 +103,8 @@ of that project.
 The hook only fills `_inbox/`. Emptying it is a separate step, and you are in the loop:
 
 ```bash
-node dist/cli.js --root <bank> --list-inbox
-node dist/cli.js --root <bank> --promote _inbox/note.md --to engineering/thing.md --derived ../dna/principles.md --dry-run
+mcp-memorybank --root <bank> --list-inbox
+mcp-memorybank --root <bank> --promote _inbox/note.md --to engineering/thing.md --derived ../dna/principles.md --dry-run
 ```
 
 In a session there is the `memorybank://inbox` resource and the `review-inbox` prompt, which walks
