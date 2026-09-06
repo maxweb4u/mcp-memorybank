@@ -7,7 +7,7 @@ import { graph, type Direction } from './graph.js'
 import { SearchIndex, search } from './search.js'
 import { changed } from './changed.js'
 import { create, inbox, promote } from './create.js'
-import { init } from './init.js'
+import { init, materializeFlows } from './init.js'
 import { startServer } from './server.js'
 
 interface Args {
@@ -38,6 +38,7 @@ interface Args {
   to?: string
   listInbox: boolean
   init?: string
+  materializeFlows?: boolean
   force: boolean
 }
 
@@ -72,6 +73,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--to') args.to = argv[++i]
     else if (a === '--list-inbox') args.listInbox = true
     else if (a === '--init') args.init = argv[++i]
+    else if (a === '--materialize-flows') args.materializeFlows = true
     else if (a === '--force') args.force = true
   }
   return args
@@ -116,7 +118,7 @@ function printStats(bank: Bank, ms: number): void {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   if (!args.root) {
-    console.error('usage: mcp-memorybank --root <path-to-memory_bank> [--stats | --route "question" | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox | --init "Project Name" [--force] [--dry-run]]')
+    console.error('usage: mcp-memorybank --root <path-to-memory_bank> [--stats | --route "question" | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox | --init "Project Name" [--force] [--dry-run] | --materialize-flows [--force]]')
     process.exit(2)
   }
 
@@ -170,6 +172,14 @@ async function main(): Promise<void> {
     console.log(`directories: ${result.directories.sort().join(', ')}`)
     console.log(`files:       ${result.files.length}`)
     for (const w of result.warnings) console.log(`warning:     ${w}`)
+    return
+  }
+
+  if (args.materializeFlows) {
+    const result = await materializeFlows(bank, { force: args.force })
+    console.log(`COPIED ${result.files.length} files into ${result.root}/flows/templates`)
+    console.log('This bank now owns its templates; bank_create prefers them over the ones the server ships.')
+    for (const w of result.warnings) console.log(`warning: ${w}`)
     return
   }
 

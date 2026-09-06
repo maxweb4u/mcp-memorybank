@@ -29,6 +29,7 @@ describe('stdio server', () => {
         'bank_edit',
         'bank_graph',
         'bank_init',
+        'bank_materialize_flows',
         'bank_promote',
         'bank_read',
         'bank_route',

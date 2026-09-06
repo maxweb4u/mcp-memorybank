@@ -8,7 +8,8 @@ It writes nothing on its own initiative. Every document arrives from a deliberat
 purpose, an upstream dependency and an index entry; what the end-of-session hook collects lands in
 a quarantine that only a human empties.
 
-Spec — [specification.md](specification.md), plan — [implementation-plan.md](implementation-plan.md).
+Spec — [specification.md](specification.md), plan — [implementation-plan.md](implementation-plan.md),
+what a seeded bank is made of and where it strains — [architecture.md](architecture.md).
 
 Everything in the plan is done: **E0** index, **E1** reads, **E2** validation, **E3** graph,
 **E4** search and delta, **E5** writes.
@@ -130,6 +131,23 @@ exists, it always says so, because that is the code moving out from under the do
 It never guesses which document owns which file. The pairing is hand-annotated or it does not exist,
 which means a bank that has not been annotated gets an honest empty answer and a note saying why. And
 it reports without editing: whether a six-month gap matters is not a judgement a timestamp can make.
+
+### What a seeded bank contains
+
+`bank_init` writes 24 files: the governance set in `dna/`, eight section registries, the four flow
+documents, and two drafts to fill in. Three more sections — `epics`, `prd`, `prompts` — are built
+the first time a document needs one, index and root-index entry included, rather than standing empty
+from the start.
+
+The document templates are not copied. They ship with the server and `bank_create` reads them from
+there, so a bank behaves exactly as if it held them; `--materialize-flows` copies them in for a
+project that means to change one, and from then on the bank's own copies win. The prose flows *are*
+copied, because people read them and routing answers with them.
+
+`dna/` is copied too, and that one is not negotiable: it is the law the bank is judged by, and the
+design rests on it travelling with the corpus. Every top-level directory's layer and ranking weight
+is declared there as well — a bank that renames a section says so in that table and keeps its
+weight, and a bank that declares nothing gets the built-in map.
 
 ### What it will not do
 

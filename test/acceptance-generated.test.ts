@@ -18,7 +18,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { Bank } from '../src/bank.js'
-import { init } from '../src/init.js'
+import { init, materializeFlows } from '../src/init.js'
 import { create } from '../src/create.js'
 import { validate } from '../src/validate.js'
 import { route } from '../src/route.js'
@@ -99,7 +99,11 @@ afterAll(async () => {
 
 describe('the bank this build generates', () => {
   it('seeds a complete skeleton and a readable contract', () => {
-    expect(seeded).toBe(50)
+    // Eight sections rather than eleven (B-09), and the templates pointed at rather than copied
+    // (B-10): 24 files where this used to be 50.
+    expect(seeded).toBe(24)
+    expect(bank.get('flows/feature-flow.md')).toBeDefined()
+    expect(bank.get('flows/templates/adr/ADR-ID.md')).toBeUndefined()
     expect(bank.contract.present).toBe(true)
     expect(bank.contract.requiresDerivedFrom).toBe(true)
   })
@@ -151,13 +155,20 @@ describe('E1 — routing over what was just written', () => {
     expect(top.indexOf('engineering/architecture.md')).toBeLessThan(top.indexOf(FEATURE))
   })
 
-  it('never surfaces one of the 23 starter templates', () => {
-    const templates = bank.all().filter((d) => d.docFunction === 'template')
+  it('never surfaces a template, once a bank has taken ownership of them', async () => {
+    // A seeded bank has none to surface (B-10). The flooding this guards against only becomes
+    // possible after materialize-flows, so that is where the guard belongs.
+    const owned = new Bank(await fs.mkdtemp(path.join(os.tmpdir(), 'memorybank-templates-')))
+    await init(owned, { name: 'Templates' })
+    await materializeFlows(owned)
+
+    const templates = owned.all().filter((d) => d.docFunction === 'template')
     expect(templates.length).toBeGreaterThan(20)
     const names = new Set(templates.map((d) => d.path))
     for (const question of ['feature flow gates', 'record a decision', 'filter thresholds']) {
-      expect(route(bank, question, { limit: 10 }).filter((r) => names.has(r.path))).toEqual([])
+      expect(route(owned, question, { limit: 10 }).filter((r) => names.has(r.path))).toEqual([])
     }
+    await fs.rm(owned.root, { recursive: true, force: true })
   })
 
   it('reads one section instead of the whole document', async () => {

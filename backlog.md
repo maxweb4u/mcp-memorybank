@@ -217,6 +217,22 @@ The contract in `dna/frontmatter.md` matches byte for byte in only five of the f
 have a `dna/` at all. The server could show the diff: "governance in this bank is three months newer
 than in that one". Not migrate silently — show.
 
+**Measured 6 September, and the framing in the paragraph above is wrong.** Byte-for-byte agreement
+is the wrong test: two banks can differ by whitespace while permitting exactly the same things, and
+agree in shape while permitting different ones. `parseContract` already extracts what actually
+matters — the enums, whether `derived_from` is required, whether cycles are forbidden — so the
+comparison should be of parsed contracts, and the answer should read "this bank allows four
+`status` values, that one three" rather than a diff of table formatting.
+
+What the real corpus shows: in a 378-document bank of the same lineage as the starter, 30 of 36
+governance and flow files are still byte-identical and 6 have diverged — one of them
+`dna/governance.md`. It lists 10 `doc_kind` values against the starter's 14, and 3 `doc_function`
+against 9. **118 documents, 31% of that bank, carry values its own law does not permit**, and 91 of
+those would be resolved by refreshing one file. See [architecture.md](architecture.md).
+
+Roughly forty lines and one CLI flag: two bank roots in, the difference between their parsed
+contracts out. Show, never migrate — the same rule `bank_drift` follows.
+
 ### B-05. Russian-language queries to `bank_route` — **done**
 
 The banks are in English and ranking ran on English tokens, so a hand-typed Russian question returned
@@ -300,6 +316,82 @@ Two limits keep it from becoming a workspace crawler by accident: it will not re
 directory levels from the bank root, and it stops after 25 targets. A path that resolves to nothing
 comes back marked broken rather than external — which is a distinction the old output could not
 draw, since both looked like a bare string.
+
+### B-08. Let the bank declare its own layers — **done**
+
+`layerOf()` read the first path segment against `BY_DIR`, a fixed table in `layer.ts`. It was the
+only place where "the bank declares its own rules" was untrue, and it failed silently: a bank naming
+a section `scenarios` instead of `use-cases` dropped to layer `other`, lost the 1.2 ranking weight,
+and produced no finding, because validation never looked at layers.
+
+**Done.** `dna/governance.md` now carries a `Directory | Layer | Weight` table, parsed the same way
+the enum tables already are. Anything it declares is overlaid on the built-in map; a bank that
+declares nothing behaves exactly as before, which matters because every existing bank is that bank.
+The seeded table is deliberately identical in effect to the built-in one, so seeding it changes no
+behaviour — there is a test asserting exactly that. A row naming a layer that does not exist is
+skipped and reported as `unknown-layer-value` rather than throwing, so one bad row cannot void a
+table.
+
+One regression, caught by the acceptance suite rather than by me: the "why" question adjustment used
+to *lower* knowledge from 1.5 to 1.2 while lifting decision to 1.6, and my first version raised both
+with `Math.max`. It is now expressed as multipliers on whatever the bank declares — 4/3 and 0.8 —
+which reproduce the old numbers exactly against the built-in weights and preserve the relationship
+against declared ones.
+
+### B-09. Stop seeding `epics`, `prd` and `prompts` — **done**
+
+Measured across four banks — `ebook_parser`, `tasman/research`, `idelo`, `focusreminder` — these
+three sections were index-only in **all four**, while four sections carried nearly everything.
+
+**Done.** `bank_init` writes eight sections. The property that justified seeding the other three is
+kept rather than dropped: `bank_create` builds a missing section, its index, and its entry in the
+root index in the same operation, and says so in a warning. A dry run reports what it would create
+without creating it. Nothing else changes — `layerOf` still knows the three, the templates still
+ship, `bank_create` still accepts the kinds.
+
+The root-index registration needed its own function. `registerLine` appends after the last markdown
+link in a file, which in a root index is a row of the task-routing table at the bottom; a section
+listed there would read as a task.
+
+### B-10. Seed the templates by reference rather than by copy — **done, and narrower than proposed**
+
+The item said to point at all of `flows/`. The first full test run said what that costs, and it was
+more than the note anticipated: with the prose flows absent, `bank_route` could no longer answer a
+question about the project's own procedure — it returned `features/README.md` for "how a feature
+package moves through its gates" — and a person cloning the repository could not read the flow at
+all. The 45 KB feature flow is not machinery; it is the procedure people follow.
+
+So the line falls **inside** `flows/`:
+
+```
+flows/*.md            4 files, 68 KB   copied — read by people, ranked by routing
+flows/templates/     24 files, 140 KB  pointed at — read by bank_create and nothing else
+```
+
+Templates are the right half to reference: routing skips them by construction
+(`doc_function: template`), nobody reads one as prose, and none of the four measured banks had
+customised one. A seeded bank is now **24 files instead of 50**.
+
+Three things had to be built for it to be invisible:
+
+- **`templateSource`** checks the bank first and falls through to the set the server ships, so a
+  bank that never customised anything behaves exactly as if the files were there. A bank that *did*
+  customise always wins.
+- **`materializeFlows`** — `--materialize-flows`, `bank_materialize_flows` — copies the templates in
+  when a project genuinely means to change one. It refuses to overwrite templates the bank already
+  customised unless forced, and leaves the prose flows alone.
+- **`shippedTemplateNames`** restores evidence that `unresolved-rule-reference` used to get from the
+  bank. That rule excuses a bare mention of a template filename — the feature flow says a fact is
+  recorded in `design.md`, which is prose about package shape, not a reference to one file — and it
+  recognised those names by finding them in the bank. With the templates pointed at, the names are
+  just as real but the file is not there, so the rule asks the server instead.
+
+**What is not solved by this.** The drift measured in B-04 was worst in `dna/governance.md`, and
+`dna/` is still copied — deliberately, because it is the law the bank is judged by and it has to
+travel with the corpus. Volume is now handled; divergence of the law still needs the parsed-contract
+diff in B-04, which after this is the most valuable unbuilt item in the list.
+
+Full analysis — [architecture.md](architecture.md).
 
 ## C. Publishing
 

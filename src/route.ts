@@ -1,5 +1,5 @@
 import type { BankDoc, Layer } from './types.js'
-import { LAYER_WEIGHT } from './layer.js'
+import { layerWeights as declaredWeights } from './layer.js'
 import type { Bank } from './bank.js'
 import { expandTerms, RU_STOP, WHY_INTENT, type QueryTerm } from './lang.js'
 
@@ -90,14 +90,31 @@ export interface RouteOptions {
   layer?: Layer
 }
 
-function layerWeights(question: string): Record<Layer, number> {
-  if (!WHY_INTENT.test(question)) return LAYER_WEIGHT
-  return { ...LAYER_WEIGHT, decision: 1.6, knowledge: 1.2 }
+/**
+ * A "why" question wants the decision that settled the matter, not the document describing the
+ * result — so decision is lifted and knowledge is damped, until decision outranks it.
+ *
+ * These are multipliers rather than fixed numbers because the bank may declare its own weights
+ * (B-08). Against the built-in 1.2 and 1.5 they reproduce exactly the 1.6 and 1.2 this has always
+ * used; against a bank that weighs its layers differently they preserve the relationship instead of
+ * overwriting the declaration.
+ */
+const WHY_DECISION_LIFT = 4 / 3
+const WHY_KNOWLEDGE_DAMP = 0.8
+
+function layerWeights(bank: Bank, question: string): Record<Layer, number> {
+  const base = declaredWeights(bank.layers)
+  if (!WHY_INTENT.test(question)) return base
+  return {
+    ...base,
+    decision: base.decision * WHY_DECISION_LIFT,
+    knowledge: base.knowledge * WHY_KNOWLEDGE_DAMP,
+  }
 }
 
 export function route(bank: Bank, question: string, opts: RouteOptions = {}): RouteResult[] {
   const terms = expandTerms(tokenize(question))
-  const weights = layerWeights(question)
+  const weights = layerWeights(bank, question)
   if (terms.length === 0) return []
   const limit = opts.limit ?? 5
   const scored: (RouteResult & { raw: number })[] = []

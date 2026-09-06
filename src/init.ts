@@ -5,7 +5,22 @@ import matter from 'gray-matter'
 import type { Bank } from './bank.js'
 
 /** The starter set ships with the server; once copied it belongs to the bank and can be rewritten. */
-const STARTER = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'starter')
+export const STARTER = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'starter')
+
+/**
+ * What is copied into a bank, and what is only pointed at.
+ *
+ * B-10 started as "seed `flows/` by reference" and had to be narrowed, because the first full test
+ * run showed what that costs: with the flows absent, `bank_route` could no longer answer a question
+ * about the project's own procedure, and a person cloning the repository could not read it at all.
+ *
+ * So the line falls inside `flows/`. The four prose documents — the feature flow, the epic flow,
+ * `workflows.md` and the index — are 68 KB, they are read by people, and routing ranks them. They
+ * are copied. `flows/templates/` is 140 KB across 24 files that nobody reads as prose, that routing
+ * deliberately skips (`doc_function: template`), and that four measured banks had not customised.
+ * That is the part that is pointed at.
+ */
+const COPIED = ['dna', 'product', 'engineering']
 
 interface Section {
   dir: string
@@ -19,11 +34,14 @@ interface Section {
 }
 
 /**
- * The fourteen-directory skeleton every mature bank in the wild shares. `dna/` and `flows/` come
- * from the starter set; the rest are empty registries, created so a first document of each kind
- * has a registered home instead of landing nowhere.
+ * Every section the server knows how to index. `dna/` and `flows/` come from the starter set; these
+ * are registries, so that a first document of each kind has a registered home instead of landing
+ * nowhere.
+ *
+ * Not all of them are seeded — see {@link SEEDED}. One that is left out is still known here, and
+ * `bank_create` builds its index the moment a first document needs it.
  */
-const SECTIONS: Section[] = [
+export const SECTIONS: Section[] = [
   { dir: 'product', docKind: 'product', title: 'Product Documentation Index', purpose: 'Navigation for product-level documentation: why the project exists, for whom, and how success is measured.', route: 'Read when you need the problem, the audience, the outcomes, or the roadmap.', seeds: [{ file: 'context.md', title: 'Product Context', purpose: 'The problem, the audience, and the constraints everything else inherits. Seeded as a draft — fill it in first.' }] },
   { dir: 'domain', docKind: 'domain', title: 'Domain Documentation Index', purpose: 'Navigation for domain-level documentation: vocabulary, model, rules, states, and events.', route: 'Read when you need the project’s language, entities, rules, or state semantics.' },
   { dir: 'engineering', docKind: 'engineering', title: 'Engineering Documentation Index', purpose: 'Navigation for implementation documentation: architecture, conventions, testing policy, and known traps.', route: 'Read when you need architecture, coding and testing conventions, or gotchas.', seeds: [{ file: 'testing-policy.md', title: 'Testing Policy', purpose: 'What must have automated tests, what is verified manually, and the simplify review the closure gate requires. Seeded as a draft — fill it in first.' }] },
@@ -36,6 +54,24 @@ const SECTIONS: Section[] = [
   { dir: 'processes', docKind: 'process', title: 'Process Registry', purpose: 'Registry of durable working processes and session protocols.', route: 'Read when you need a recurring procedure rather than a one-off decision.' },
   { dir: 'prompts', docKind: 'prompt', title: 'Prompt Registry', purpose: 'Registry of governed prompts used against this project.', route: 'Read when you need a prompt that is part of the project, not of one session.' },
 ]
+
+/**
+ * The sections `bank_init` actually creates.
+ *
+ * `epics`, `prd` and `prompts` are deliberately absent. Measured across four banks —
+ * `ebook_parser`, `tasman/research`, `idelo`, `focusreminder` — all three were index-only in every
+ * one of them, while four sections carried nearly everything. An empty registry is meant to give a
+ * first document a home; a registry four consecutive projects never opened is an invitation to
+ * ceremony instead. They are still known, still ranked, still templated — they are simply built on
+ * first use rather than in advance.
+ */
+const SEEDED = new Set(['product', 'domain', 'engineering', 'ops', 'adr', 'use-cases', 'features', 'processes'])
+
+/** The section that owns a bank-relative path, when the server knows one. */
+export function sectionFor(bankRelativePath: string): Section | undefined {
+  const top = bankRelativePath.split('/')[0]
+  return top ? SECTIONS.find((s) => s.dir === top) : undefined
+}
 
 export interface InitInput {
   /** Project name, used in the root index. */
@@ -59,7 +95,7 @@ function frontmatter(fields: Record<string, unknown>, body: string): string {
   return matter.stringify(`${body.trimEnd()}\n`, fields, { lineWidth: -1 } as never)
 }
 
-function sectionIndex(section: Section): string {
+export function sectionIndex(section: Section): string {
   return frontmatter(
     {
       title: section.title,
@@ -78,8 +114,62 @@ function sectionIndex(section: Section): string {
   )
 }
 
+/**
+ * What stands in `flows/` when the procedures are not copied into the bank.
+ *
+ * It is a signpost, not a stub: it says where the real thing is, that the templates still work, and
+ * exactly how to take ownership if this project needs its own.
+ */
+function flowsPointer(): string {
+  return frontmatter(
+    {
+      title: 'Document Templates',
+      doc_kind: 'governance',
+      doc_function: 'index',
+      purpose:
+        'Where the document templates live, and how to bring them into this bank if the project needs its own.',
+      derived_from: ['../../dna/governance.md'],
+      status: 'active',
+      audience: 'humans_and_agents',
+    },
+    `# Document Templates
+
+The document templates are **not copied into this bank**. They ship with the \`memorybank\`
+server and are read from there.
+
+Nothing is missing as a result. \`bank_create\` instantiates the right template for a
+\`doc_kind\` exactly as it would if the files were here, and reports which one it used.
+
+The flows themselves — [\`feature-flow.md\`](../feature-flow.md), [\`epic-flow.md\`](../epic-flow.md),
+[\`workflows.md\`](../workflows.md) — **are** here, because they are read by people and answered by
+routing. Only the fill-in-the-blanks templates behind them are not.
+
+## Why not copy them
+
+Twenty-four files and 140 KB, identical in every bank, that nobody reads as prose and that routing
+skips on purpose. Copies fork: measured across four projects none had customised a template, while
+the copies had already begun to drift — and a bank cannot notice that its templates are a year
+behind another bank's, because each one only ever reads its own.
+
+## If this project needs its own
+
+Take ownership and the copies stop being shared:
+
+\`\`\`bash
+mcp-memorybank --root <this bank> --materialize-flows
+\`\`\`
+
+That writes the current set into \`flows/templates/\` and the bank owns it from then on —
+\`bank_create\` prefers what it finds here over what the server ships, always. Do it when you
+actually mean to change a template, not in advance.
+`,
+  )
+}
+
 function rootIndex(name: string): string {
-  const rows = SECTIONS.map((s) => `- [\`${s.dir}/README.md\`](${s.dir}/README.md)\n  ${s.route}`).join('\n')
+  const rows = SECTIONS.filter((s) => SEEDED.has(s.dir))
+    .map((s) => `- [\`${s.dir}/README.md\`](${s.dir}/README.md)\n  ${s.route}`)
+    .join('\n')
   return frontmatter(
     {
       title: 'Documentation Index',
@@ -171,19 +261,35 @@ export async function init(bank: Bank, input: InitInput): Promise<InitResult> {
     throw new Error(`Starter set not found at ${STARTER}. The server package is incomplete.`)
   }
 
-  const directories = [...SECTIONS.map((s) => s.dir), 'dna', 'flows']
+  const seeded = SECTIONS.filter((s) => SEEDED.has(s.dir))
+  const directories = [...seeded.map((s) => s.dir), 'dna', 'flows']
   const files: string[] = []
 
   if (input.dryRun) {
-    files.push(...(await listTree(STARTER, '')))
-    files.push(...SECTIONS.map((s) => `${s.dir}/README.md`), 'README.md')
+    for (const sub of COPIED) files.push(...(await listTree(path.join(STARTER, sub), sub)))
+    files.push(
+      ...(await fs.readdir(path.join(STARTER, 'flows'))).filter((n) => n.endsWith('.md')).map((n) => `flows/${n}`),
+      'flows/templates/README.md',
+    )
+    files.push(...seeded.map((s) => `${s.dir}/README.md`), 'README.md')
     return { root: bank.root, created: false, dryRun: true, files: files.sort(), directories, warnings }
   }
 
   await fs.mkdir(bank.root, { recursive: true })
-  await copyTree(STARTER, bank.root, files, bank.root)
+  for (const sub of COPIED) {
+    await copyTree(path.join(STARTER, sub), path.join(bank.root, sub), files, bank.root)
+  }
+  // The prose flows are copied; only `flows/templates/` is pointed at.
+  await fs.mkdir(path.join(bank.root, 'flows', 'templates'), { recursive: true })
+  for (const name of await fs.readdir(path.join(STARTER, 'flows'))) {
+    if (!name.endsWith('.md')) continue
+    await fs.copyFile(path.join(STARTER, 'flows', name), path.join(bank.root, 'flows', name))
+    files.push(`flows/${name}`)
+  }
+  await fs.writeFile(path.join(bank.root, 'flows', 'templates', 'README.md'), flowsPointer(), 'utf8')
+  files.push('flows/templates/README.md')
 
-  for (const section of SECTIONS) {
+  for (const section of seeded) {
     const target = path.join(bank.root, section.dir, 'README.md')
     await fs.mkdir(path.dirname(target), { recursive: true })
     await fs.writeFile(target, sectionIndex(section), 'utf8')
@@ -195,4 +301,104 @@ export async function init(bank: Bank, input: InitInput): Promise<InitResult> {
 
   await bank.refresh()
   return { root: bank.root, created: true, dryRun: false, files: files.sort(), directories, warnings }
+}
+
+
+/** Directory aliases the template lookup already understands, kept in one place. */
+const DIR_ALIAS: Record<string, string> = { use_case: 'use-case', 'feature-support': 'feature' }
+
+/**
+ * A template from the set the server ships, for a bank that has not taken ownership of `flows/`.
+ *
+ * Deliberately narrow: it reads one directory of the shipped starter and nothing else. It is a
+ * fallback for the copy that is no longer made, not a second place where banks can keep documents.
+ */
+export async function shippedTemplate(
+  docKind: string,
+  targetPath: string,
+): Promise<{ path: string; raw: string; fromServer: boolean } | null> {
+  const wanted = path.posix.basename(targetPath)
+  const dirs = [docKind, DIR_ALIAS[docKind]].filter((d): d is string => Boolean(d))
+
+  for (const dir of dirs) {
+    const base = path.join(STARTER, 'flows', 'templates', dir)
+    let entries: string[]
+    try {
+      entries = (await fs.readdir(base, { withFileTypes: true }))
+        .filter((e) => e.isFile() && e.name.endsWith('.md'))
+        .map((e) => e.name)
+    } catch {
+      continue
+    }
+
+    const named = entries.filter((e) => e !== 'README.md')
+    const pick = entries.includes(wanted) ? wanted : named.length === 1 ? named[0]! : null
+    if (!pick) continue
+
+    const raw = await fs.readFile(path.join(base, pick), 'utf8')
+    return { path: `flows/templates/${dir}/${pick}`, raw, fromServer: true }
+  }
+  return null
+}
+
+/**
+ * Copies the shipped flows into the bank, which then owns them.
+ *
+ * The escape hatch for B-10: a project that really does mean to change a procedure takes the files
+ * and stops sharing. `bank_create` prefers what it finds in the bank, so this needs no other switch.
+ */
+export async function materializeFlows(bank: Bank, opts: { force?: boolean } = {}): Promise<InitResult> {
+  const existing = bank
+    .all()
+    .filter((d) => d.path.startsWith('flows/templates/') && d.path !== 'flows/templates/README.md')
+  if (existing.length > 0 && !opts.force) {
+    throw new Error(
+      `flows/templates/ already holds ${existing.length} documents of its own. Refusing to overwrite them; pass force to override.`,
+    )
+  }
+
+  const files: string[] = []
+  await copyTree(
+    path.join(STARTER, 'flows', 'templates'),
+    path.join(bank.root, 'flows', 'templates'),
+    files,
+    bank.root,
+  )
+  await bank.refresh()
+  return {
+    root: bank.root,
+    created: true,
+    dryRun: false,
+    files: files.sort(),
+    directories: ['flows/templates'],
+    warnings: existing.length > 0 ? [`Overwrote ${existing.length} documents that flows/ already held.`] : [],
+  }
+}
+
+
+/**
+ * Basenames of the templates the server ships.
+ *
+ * `unresolved-rule-reference` excuses a bare mention of a template filename — flow prose says
+ * "recorded in `design.md`" about package shape, not about one file — and it recognised those names
+ * by finding them in the bank. Once `flows/templates/` is pointed at rather than copied (B-10) the
+ * evidence is gone from the bank but the names are just as real, so the rule asks here instead.
+ */
+export async function shippedTemplateNames(): Promise<Set<string>> {
+  const names = new Set<string>()
+  const base = path.join(STARTER, 'flows', 'templates')
+  const visit = async (dir: string): Promise<void> => {
+    let entries
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) await visit(path.join(dir, e.name))
+      else if (e.isFile() && e.name.endsWith('.md')) names.add(e.name)
+    }
+  }
+  await visit(base)
+  return names
 }

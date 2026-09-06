@@ -36,7 +36,8 @@ describe('seeding an empty root', () => {
         'dna/frontmatter.md',
         'dna/principles.md',
         'flows/feature-flow.md',
-        'flows/templates/adr/ADR-ID.md',
+        // The templates are pointed at, not copied (B-10); the prose flows still are.
+        'flows/templates/README.md',
         'product/README.md',
         'engineering/README.md',
       ]),

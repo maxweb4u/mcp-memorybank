@@ -11,7 +11,7 @@ import { SearchIndex, search } from './search.js'
 import { changed } from './changed.js'
 import { drift } from './drift.js'
 import { create, discard, inbox, promote } from './create.js'
-import { init } from './init.js'
+import { init, materializeFlows } from './init.js'
 import { edit, setStatus, updateSection } from './update.js'
 
 const LAYERS = ['dna', 'knowledge', 'decision', 'delivery', 'flow', 'other'] as const
@@ -392,6 +392,30 @@ export async function startServer(bank: Bank): Promise<void> {
       await bank.refresh()
       try {
         return json(await changed(bank, since))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  server.registerTool(
+    'bank_materialize_flows',
+    {
+      title: 'Take ownership of the flows and templates',
+      description:
+        'Copies the flows and document templates the server ships into this bank, which then owns them. ' +
+        'Only needed when a project genuinely means to change a procedure: by default the bank carries a ' +
+        'pointer instead of a copy, and `bank_create` reads the shipped templates, so nothing is missing ' +
+        'without this. Refuses when flows/ already holds documents of its own, unless force says otherwise.',
+      inputSchema: {
+        force: z.boolean().optional().describe('Overwrite flows the bank already customised'),
+      },
+      annotations: { destructiveHint: false, idempotentHint: false },
+    },
+    async ({ force }) => {
+      await bank.refresh()
+      try {
+        return json(await materializeFlows(bank, { force }))
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }

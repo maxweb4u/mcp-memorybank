@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { Bank } from '../src/bank.js'
-import { init } from '../src/init.js'
+import { init, materializeFlows } from '../src/init.js'
 import { create, discard, promote } from '../src/create.js'
 import { edit, setStatus, updateSection } from '../src/update.js'
 import { readMany } from '../src/read.js'
@@ -108,6 +108,9 @@ describe('what it refuses', () => {
   })
 
   it('refuses a template', async () => {
+    // A seeded bank points at the shipped templates rather than copying them (B-10), so there is
+    // nothing to refuse until the bank owns some.
+    await materializeFlows(bank)
     const template = bank.all().find((d) => d.docFunction === 'template')!
     await expect(
       updateSection(bank, { path: template.path, section: 'Purpose', content: 'x' }),

@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises'
 import type { Bank } from './bank.js'
+import { LAYERS } from './layer.js'
+import { shippedTemplateNames } from './init.js'
 import type { BankDoc } from './types.js'
 
 export type Severity = 'error' | 'warning'
@@ -32,6 +34,7 @@ export const RULES = [
   'ssot-conflict',
   'must-not-define-violated',
   'dangling-index-entry',
+  'unknown-layer-value',
   'no-contract',
 ] as const
 
@@ -227,6 +230,7 @@ const RULE_REF =
  */
 async function unresolvedRuleReferences(bank: Bank, scope?: string): Promise<Finding[]> {
   const out: Finding[] = []
+  const shipped = await shippedTemplateNames()
 
   // `design.md` / `brief.md` occur once per feature package; a bare mention of such a name is
   // generic prose about package structure, not a reference to one file. A basename that exists
@@ -269,6 +273,9 @@ async function unresolvedRuleReferences(bank: Bank, scope?: string): Promise<Fin
           // Several carriers, or a template filename: the mention is about package shape, not a file.
           if (sameName.length > 1) continue
           if (sameName.length === 1 && bank.get(sameName[0]!)?.docFunction === 'template') continue
+          // A bank that points at the shipped templates rather than copying them has no such
+          // document to find, but the name means exactly the same thing.
+          if (sameName.length === 0 && shipped.has(base)) continue
         }
 
         const hint = sameName.length === 1 ? ` Did you mean ${sameName[0]}?` : ''
@@ -306,6 +313,19 @@ export async function validate(bank: Bank, opts: ValidateOptions = {}): Promise<
   // Most rules are structural and need no contract; only missing-derived-from, the cycle rule and
   // unknown-enum-value depend on what dna/ declares, and each gates itself on that.
   const findings = [...structural(bank, opts.scope), ...(await unresolvedRuleReferences(bank, opts.scope))]
+
+  // A layer table that names a layer which does not exist is silent otherwise: the row is skipped,
+  // the directory keeps whatever the built-in map says, and ranking quietly differs from the
+  // declaration. Reported here rather than thrown, because one bad row should not void the table.
+  for (const row of bank.layers.unknown) {
+    if (opts.scope && !row.source.startsWith(opts.scope.replace(/^\.?\//, '').replace(/\/$/, ''))) continue
+    findings.push({
+      severity: 'warning',
+      rule: 'unknown-layer-value',
+      path: row.source,
+      message: `"${row.dir}" is declared as layer "${row.layer}", which is not one of ${LAYERS.join(', ')}. The row is ignored and "${row.dir}" keeps its default layer.`,
+    })
+  }
   if (!bank.contract.present) {
     findings.push({
       severity: 'warning',

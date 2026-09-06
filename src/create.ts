@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import matter from 'gray-matter'
 import type { Bank } from './bank.js'
+import { SECTIONS, sectionFor, sectionIndex, shippedTemplate } from './init.js'
 import type { BankDoc } from './types.js'
 import { resolveFrom, splitFrontmatter } from './parse.js'
 
@@ -193,6 +194,93 @@ export function pickTemplate(bank: Bank, docKind: string, targetPath: string): B
   return named.length === 1 ? named[0]! : null
 }
 
+/**
+ * The template text for a new document, from the bank if it has one and from the set the server
+ * ships if it does not.
+ *
+ * `bank_init` no longer copies 208 KB of `flows/` into every bank (B-10). A bank that never
+ * customised its templates should behave exactly as if it had them, so the lookup falls through to
+ * the shipped copy rather than warning that no template matched. A bank that *did* customise wins,
+ * always: the bank's own file is checked first and the fallback never overrides it.
+ */
+export async function templateSource(
+  bank: Bank,
+  docKind: string,
+  targetPath: string,
+): Promise<{ path: string; raw: string; fromServer: boolean } | null> {
+  const inBank = pickTemplate(bank, docKind, targetPath)
+  if (inBank) {
+    const raw = bank.raw(inBank.path)
+    if (raw !== undefined) return { path: inBank.path, raw, fromServer: false }
+  }
+  return shippedTemplate(docKind, targetPath)
+}
+
+/**
+ * Creates the section index for a known section that has none yet, and returns its path.
+ *
+ * `bank_init` no longer seeds `epics`, `prd` and `prompts`, on the evidence that four consecutive
+ * banks never opened them. The property that made seeding them worth doing still has to hold: a
+ * first document of any kind lands in a registered home. So the index is built here instead, at the
+ * moment something needs it, rather than standing empty in advance.
+ */
+async function ensureSectionIndex(bank: Bank, targetPath: string): Promise<string | null> {
+  const section = sectionFor(normalise(targetPath))
+  if (!section) return null
+  const indexPath = `${section.dir}/README.md`
+  if (bank.get(indexPath)) return null
+
+  await fs.mkdir(bank.abs(section.dir), { recursive: true })
+  await fs.writeFile(bank.abs(indexPath), sectionIndex({ ...section, seeds: undefined }), 'utf8')
+
+  // A section index nothing links to is exactly the failure this whole mechanism exists to prevent,
+  // one level up: the document would be registered in an index that is itself unreachable.
+  const rootRaw = bank.raw('README.md')
+  if (rootRaw !== undefined) {
+    const updated = registerSection(rootRaw, section.dir, section.route)
+    if (updated !== rootRaw) await fs.writeFile(bank.abs('README.md'), updated, 'utf8')
+  }
+
+  await bank.refresh()
+  return indexPath
+}
+
+const SECTION_ENTRY = /^- \[`?([a-z][a-z0-9-]*)\/README\.md`?\]\(/
+
+/** `dna/` and `flows/` are listed in the root index too, but they are not sections and a new one
+ *  belongs with its own kind rather than after the governance set. */
+const isSectionEntry = (line: string): boolean => {
+  const dir = SECTION_ENTRY.exec(line)?.[1]
+  return dir !== undefined && SECTIONS.some((s) => s.dir === dir)
+}
+
+/**
+ * Adds a section to the root index, in the two-line shape the other sections already use.
+ *
+ * `registerLine` is not the right tool here: it appends after the last markdown link in the file,
+ * which in a root index is a row of the task-routing table at the bottom. A section listed there
+ * would read as a task.
+ */
+export function registerSection(rootRaw: string, dir: string, route: string): string {
+  if (new RegExp(`\\(${dir}/README\\.md\\)`).test(rootRaw)) return rootRaw
+
+  const lines = rootRaw.split('\n')
+  let last = -1
+  for (let i = 0; i < lines.length; i++) if (isSectionEntry(lines[i]!)) last = i
+  if (last === -1) return rootRaw
+
+  // The description line that belongs to that entry, if it has one.
+  let insertAt = last + 1
+  while (insertAt < lines.length && lines[insertAt]!.trim() !== '' && !isSectionEntry(lines[insertAt]!)) {
+    insertAt++
+  }
+
+  const backticked = /^- \[`/.test(lines[last]!)
+  const label = backticked ? `\`${dir}/README.md\`` : `${dir}/README.md`
+  lines.splice(insertAt, 0, `- [${label}](${dir}/README.md)`, `  ${route}`)
+  return lines.join('\n')
+}
+
 /** The index that should route a new document: its own directory, then the nearest ancestor. */
 export function pickIndex(bank: Bank, targetPath: string): BankDoc | null {
   const segments = normalise(targetPath).split('/')
@@ -365,16 +453,13 @@ export async function create(bank: Bank, input: CreateInput): Promise<CreateResu
     canonicalFor,
   })
 
-  const template = input.inbox ? null : pickTemplate(bank, input.docKind, target)
+  const template = input.inbox ? null : await templateSource(bank, input.docKind, target)
   let base: Record<string, unknown> = {}
   let body = `# ${input.title}\n`
   if (template) {
-    const raw = bank.raw(template.path)
-    if (raw) {
-      const filled = instantiate(raw)
-      base = filled.data
-      if (filled.body) body = retitle(filled.body, input.title)
-    }
+    const filled = instantiate(template.raw)
+    base = filled.data
+    if (filled.body) body = retitle(filled.body, input.title)
   } else if (!input.inbox) {
     warnings.push(`No template matched doc_kind "${input.docKind}"; wrote a minimal document instead.`)
   }
@@ -416,10 +501,23 @@ export async function create(bank: Bank, input: CreateInput): Promise<CreateResu
   // lineWidth: -1 keeps a long purpose on one line instead of folding it with `>-`.
   const contents = matter.stringify(`${body.trimEnd()}\n`, frontmatter, { lineWidth: -1 } as never)
 
+  // `pickIndex` walks up to the root index, which always exists, so it cannot answer "does this
+  // section have an index of its own" — which is the question here.
+  const section = input.inbox ? undefined : sectionFor(normalise(target))
+  const missingIndex = section && !bank.get(`${section.dir}/README.md`) ? `${section.dir}/README.md` : null
+  if (missingIndex && !input.dryRun) await ensureSectionIndex(bank, target)
+
   const index = input.inbox ? null : pickIndex(bank, target)
   const registeredIn: string[] = []
   if (index) registeredIn.push(index.path)
   else if (!input.inbox) warnings.push('No index found to register this document in; navigation will not reach it.')
+  if (missingIndex) {
+    warnings.push(
+      input.dryRun
+        ? `Section "${missingIndex}" does not exist yet and would be created to register this document.`
+        : `Section "${missingIndex}" did not exist yet and was created to register this document.`,
+    )
+  }
 
   if (!input.dryRun) await land(bank, target, contents, index, input.title, input.purpose)
 
@@ -551,13 +649,9 @@ export async function promote(bank: Bank, input: PromoteInput): Promise<PromoteR
 
   const warnings = checkGovernance(bank, { target, status, docKind, derivedFrom, canonicalFor })
 
-  const template = pickTemplate(bank, docKind, target)
-  let base: Record<string, unknown> = {}
-  if (template) {
-    const raw = bank.raw(template.path)
-    // Only the template's governed fields; its body would overwrite what was captured.
-    if (raw) base = instantiate(raw).data
-  }
+  const template = await templateSource(bank, docKind, target)
+  // Only the template's governed fields; its body would overwrite what was captured.
+  const base: Record<string, unknown> = template ? instantiate(template.raw).data : {}
 
   const sourceRaw = bank.raw(from) ?? ''
   const captured = retitle(splitFrontmatter(sourceRaw).body.trim() || `# ${title}`, title)

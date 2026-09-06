@@ -36,3 +36,35 @@ Governance documents (DNA, flows) use additional fields that are not part of the
 | `doc_function` | `canonical`, `index`, `template`, `reference`, `derived`, `roadmap`, `risk_register`, `decision_log`, `subissue_registry` | Role: canonical owner of a fact, navigation index, template, a reference that owns nothing, or a document derived from a canonical owner. The last four are the epic registries, each of which owns its own register rather than a fact |
 
 These fields are required for governance documents and recommended for product, domain, ops, engineering, and project documents so agents can distinguish the knowledge layer and file role.
+
+## Directory Layers
+
+Every top-level directory belongs to a layer, and the layer sets how heavily a document is weighted
+when routing ranks answers. The table below is what this bank declares; a directory not listed here
+falls back to the server's built-in map, and a bank that deletes this section keeps working exactly
+as before.
+
+Change it when you rename a section or add one of your own — otherwise the new directory lands in
+`other` and quietly loses its weight, which produces no error because nothing else in the bank
+depends on layers.
+
+| Directory | Layer | Weight |
+|-|-|-|
+| `dna` | `dna` | 1.0 |
+| `product` | `knowledge` | 1.5 |
+| `domain` | `knowledge` | 1.5 |
+| `engineering` | `knowledge` | 1.5 |
+| `ops` | `knowledge` | 1.5 |
+| `adr` | `decision` | 1.2 |
+| `use-cases` | `decision` | 1.2 |
+| `prd` | `decision` | 1.2 |
+| `features` | `delivery` | 0.6 |
+| `epics` | `delivery` | 0.6 |
+| `flows` | `flow` | 1.0 |
+| `processes` | `flow` | 1.0 |
+| `prompts` | `flow` | 1.0 |
+| `_inbox` | `inbox` | 0.2 |
+
+Delivery is damped on purpose: in a bank with years of history it is most of the corpus, and without
+the damping every question would be answered with a feature brief instead of the rule it implements.
+The permitted layers are `dna`, `knowledge`, `decision`, `delivery`, `flow`, `inbox`, `other`.

@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { BankDoc, Contract, IndexLink } from './types.js'
 import { extractLinks, parseDoc } from './parse.js'
 import { parseContract } from './contract.js'
+import { EMPTY_LAYER_MAP, type LayerMap, layerOf, parseLayerMap } from './layer.js'
 import { parseVocabulary, setLocalVocabulary } from './lang.js'
 
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist', '.obsidian'])
@@ -40,6 +41,8 @@ export class Bank {
   /** Full file text, kept so search, validation and index parsing never re-read the disk. */
   raws = new Map<string, string>()
   contract: Contract = parseContract(new Map())
+  /** What the bank says about its own directories. Empty when it says nothing. */
+  layers: LayerMap = EMPTY_LAYER_MAP
   /** path -> documents that declare it in `derived_from`. */
   incoming = new Map<string, string[]>()
   /** `canonical_for` key -> owning document paths. */
@@ -153,6 +156,14 @@ export class Bank {
       if (doc.path.startsWith('dna/') && raw !== undefined) dnaBodies.set(doc.path, raw)
     }
     this.contract = parseContract(dnaBodies)
+
+    // Layers are assigned at parse time from the built-in table, because parsing one document knows
+    // nothing about the bank. Once `dna/` has been read we know whether this bank overrides them,
+    // so the assignment is redone here rather than threaded back into the parser.
+    this.layers = parseLayerMap(dnaBodies)
+    if (Object.keys(this.layers.byDir).length > 0) {
+      for (const doc of this.docs.values()) doc.layer = layerOf(doc.path, this.layers)
+    }
   }
 
   /** Full file text of an indexed document, frontmatter included. */
