@@ -1,6 +1,12 @@
-# memorybank-mcp
+# mcp-memorybank
 
-An MCP server over `memory_bank`: routing, section-scoped reads, governance validation.
+An MCP server for a `memory_bank` knowledge base. It seeds one from nothing, gates every write
+against the rules the bank itself declares, routes to the right document without reading the bank,
+and reports where the code has moved on without the documents.
+
+It writes nothing on its own initiative. Every document arrives from a deliberate call carrying a
+purpose, an upstream dependency and an index entry; what the end-of-session hook collects lands in
+a quarantine that only a human empties.
 
 Spec — [specification.md](specification.md), plan — [implementation-plan.md](implementation-plan.md).
 
@@ -136,28 +142,42 @@ neighbouring bank reads a header and stops there.
 
 ## Running it
 
-```bash
-npm install && npm run build
-```
-
-As an MCP server (stdio):
-
-```bash
-node dist/cli.js --root /path/to/project/memory_bank
-```
-
-Wiring it into a project:
+Wiring it into a project — `<project>/.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "memorybank": {
-      "command": "node",
-      "args": ["/absolute/path/dist/cli.js", "--root", "/absolute/path/memory_bank"]
+      "command": "npx",
+      "args": ["-y", "mcp-memorybank", "--root", "./memory_bank"]
     }
   }
 }
 ```
+
+Pin the version once you rely on it — `mcp-memorybank@0.1.0` — so the server does not change shape
+underneath a project you are not looking at.
+
+If the project has no bank yet, seed one first. The command writes the skeleton, the governance set
+and one registered index per section, and a bank created this way validates clean by construction:
+
+```bash
+npx mcp-memorybank --root ./memory_bank --init "Project Name"
+```
+
+Requires Node 22. The hook described in [hooks/README.md](hooks/README.md) also wants `jq` and `git`.
+
+### From a clone
+
+For working on the server itself, or for pointing several projects at one build:
+
+```bash
+npm install && npm run build
+node dist/cli.js --root /path/to/project/memory_bank
+```
+
+An `.mcp.json` written this way needs an absolute path to `dist/cli.js`, which ties the project to
+one checkout on one machine. Fine while developing, wrong for anything you intend to keep.
 
 ### Telling the agent to use it
 
@@ -165,23 +185,48 @@ Wiring the server in makes the tools available; it does not make an agent reach 
 itself a model will often open `README.md` and walk the section indexes, because that is what it does
 everywhere else — which is the exact walk this server exists to remove.
 
-Four lines in the project's `CLAUDE.md` settle it:
+A paragraph in the project's `CLAUDE.md` settles it:
 
 ```markdown
 # Memory bank
 
-- Answer questions about the project through `bank_route` first. Do not open `README.md` or a
-  section index to find a path. Read only what it returns, and prefer `bank_read` with a `section`.
-- Create documents only through `bank_create`. A refusal — a taken path, a `canonical_for` already
-  owned, a `derived_from` that does not resolve — is information; report it rather than writing the
-  file by hand instead.
-- Run `bank_validate` before committing changes to the bank.
-- Never promote anything out of `_inbox/` on your own. That is a review step for a human.
+This project is served by the `memorybank` MCP server. **Its tools all begin with `bank_`; load them
+at the start of a session and look at what is there** — the set grows, and anything not named here
+still exists. Working the bank through them instead of through `sed`, `cat` and `grep` is the point:
+they keep the frontmatter, the section indexes and the ownership rules intact, which a shell cannot.
+
+- **Finding.** `bank_route` answers "which document covers this"; `bank_search` finds a literal
+  across the bank; `bank_read` takes a path and a section, so a long document costs one section.
+  Reach for those before grepping `memory_bank/`.
+- **Changing.** `bank_edit` replaces one exact fragment — a backlog row, a table cell, a heading.
+  `bank_update_section` writes a whole named section. `bank_set_status` moves a document between
+  `draft`, `active` and `archived`, and releases its `canonical_for` when it retires.
+- **Creating.** `bank_create` writes the frontmatter the contract asks for and registers the document
+  in its section index in the same operation. A document written by hand is reachable from no index.
+- **Checking.** Run `bank_validate` before committing anything under `memory_bank/`, and say what it
+  found. Never promote a note out of `_inbox/` on your own — that is a review step for the owner.
 ```
 
-The second line is the one that pays. Without it an agent that hits a refusal tends to treat it as an
-obstacle and write the file directly — which is how a bank acquires a second owner of a fact, or a
-document that no index links to.
+This wording is not a matter of taste; it was measured. With no such paragraph the mechanism simply
+sits there — nine hours of one working session with `bank_route` loaded and never called. An earlier
+version of the paragraph named five tools explicitly and got exactly five tools used: the ones it
+named, and nothing else. Naming the prefix and saying to go look, then grouping by job rather than
+reciting names, brought in every tool the rewrite newly mentioned:
+
+```
+                              baseline    five named    rewritten
+writes into the bank, shell        20          0             0
+bank_edit                           0         19            14
+bank_route / bank_search            0/0        0/0           2/2
+shell searches of the bank         18         11             8
+bank_validate findings            3→5          6             0
+```
+
+The control makes the reason legible. A project given no `CLAUDE.md` at all still found the tool
+family on its own — `bank_edit` thirty times, `bank_create` eighteen — and still made seven shell
+writes into its own bank, every one of them shaped exactly like the tools it was already using. The
+server is what makes a bank hold; instructions cannot check anything. The paragraph is what makes the
+choice consistent. Neither substitutes for the other — see [field-test.md](field-test.md).
 
 ## Debugging from the terminal
 

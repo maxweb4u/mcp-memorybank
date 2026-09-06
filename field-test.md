@@ -2,7 +2,7 @@
 title: "Field test of the server"
 doc_kind: process
 doc_function: canonical
-purpose: "The field test of memorybank-mcp in live work — the plan it ran to, the six numbers it collected, the twenty-four defects it found, and the experiment that compared the server against instructions alone."
+purpose: "The field test of mcp-memorybank in live work — the plan it ran to, the six numbers it collected, the twenty-four defects it found, and the experiment that compared the server against instructions alone."
 derived_from:
   - backlog.md
   - implementation-plan.md

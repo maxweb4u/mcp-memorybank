@@ -254,7 +254,7 @@ For carrying state between sessions: what changed since last time.
 Running it:
 
 ```bash
-memorybank-mcp --root /path/to/project/memory_bank
+mcp-memorybank --root /path/to/project/memory_bank
 ```
 
 One process per project. Client configuration is an ordinary `mcpServers` entry.

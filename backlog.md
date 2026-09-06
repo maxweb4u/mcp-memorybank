@@ -1,5 +1,5 @@
 ---
-title: "memorybank-mcp — backlog"
+title: "mcp-memorybank — backlog"
 doc_kind: project
 doc_function: canonical
 purpose: "What is left after the implementation plan closed: rollout into the banks, optional server work, preparation for publishing."
@@ -169,13 +169,24 @@ covers most cases.
 
 Undecided: this moves the "the server does not edit existing documents" boundary from §8 of the spec.
 
-### B-02. Updating statuses from git automatically
+### B-02. Updating statuses from git automatically — **parked until November 2026**
 
 `delivery_status: done` when a commit mentioning `FT-XXX` merges, a plan moved to `status: archived`
 when it closes. Mechanical work with no judgement involved, but it needs a link to the PR.
 
-The motive in numbers: `archived` is set on about **4% of documents** — de facto nobody performs
-the archiving step, even though `feature-flow.md` prescribes it.
+The motive was a number: `archived` is set on about **4% of documents**, so de facto nobody performs
+the archiving step even though `feature-flow.md` prescribes it. That number was measured **before
+`bank_set_status` existed** — at the time archiving meant `sed -i`, which is exactly why it was not
+being done. In the measured sessions afterwards `idelo` called `bank_set_status` four times
+unprompted. The manual path started being used the moment it stopped costing more than the
+ungoverned one, which is the same law every other finding in the field test obeys.
+
+Against building it: automation here needs a link to the PR, which means pulling a forge into a
+server that so far knows only git and the filesystem.
+
+**Revisit on 5 November 2026**, and only on this measurement: run `--stats` across the banks and look
+at the share of `archived`. If it is still under 5% with a governed transition available, the
+transition is not the obstacle and automation earns its place. If it has moved, this stays closed.
 
 ### B-03. A code-versus-document drift detector — **done**
 
@@ -294,16 +305,57 @@ draw, since both looked like a bare string.
 
 Target — mcpservers.org.
 
-### C-01. Fill in the copyright holder and the package fields
+### C-01. Fill in the copyright holder and the package fields — **done**
 
-- `LICENSE` — replace `FILL-IN-COPYRIGHT-HOLDER` with a name or handle.
-- `package.json` — empty `author`, `repository.url`, `homepage`.
+`LICENSE` carries the holder; `package.json` has `author`, `repository.url`, `homepage` and a `bugs`
+url. MIT stays: the whole MCP ecosystem is MIT or Apache-2.0, and anything stricter would make the
+server awkward to put inside a closed project, which is the case it was written for.
 
-### C-02. What the catalogue needs
+### C-02. What the catalogue needs — **verified, not submitted**
 
-A public repository, a README with wiring instructions, a LICENSE, a working `bin`. The first three
-exist. Check `npm pack` before submitting: the archive should contain only `dist`, `hooks`,
-`README.md`, `LICENSE`.
+A public repository, a README with wiring instructions, a LICENSE, a working `bin`. All four exist,
+and `github.com/maxweb4u/mcp-memorybank` is public and current.
+
+`npm pack` was checked the only way worth checking it — build the tarball, install it into an empty
+project, and run the result:
+
+```
+files 61 · 112 kB packed · 380 kB unpacked
+bin linked, starter templates resolved from the installed package,
+--init seeded 50 files, --validate returned 0, the hook kept its executable bit
+```
+
+Two things that check turned up. **Source maps were being shipped without their sources** — 18 files
+and a third of the unpacked size, all of it inert, since the maps point at a `src/` the tarball does
+not contain. `files` now excludes them and keeps `sourceMap: true` for local work. And the archive
+carries `starter/` as well as the four entries this item originally listed; that is correct rather
+than a mistake, because `bank_init` copies the governance set out of it and the server is useless
+without it.
+
+**`main` is gone.** It pointed at `dist/server.js`, which exports one function — `startServer(bank)` —
+taking a `Bank` the package root does not hand out. The only way to obtain one was a deep import into
+`dist/`, which worked by accident of there being no `exports` map. A front door onto a room you cannot
+use is worse than no front door, so the package is now what it is: a `bin`, not a library.
+
+Emitting declarations instead was the alternative, and it builds clean (18 files, 80 KB). It was not
+chosen for a reason that has nothing to do with size: `.d.ts` turns `GraphResult`, `DriftPair`,
+`BankDoc` and the rest into public API, and renaming a field becomes a major version. Six tools
+arrived in the last two weeks; the shapes are still moving. Adding `main` with declarations later is
+ten minutes. Withdrawing a contract someone already depends on is not.
+
+Three things were fixed on the way out. `prepublishOnly` runs the build and the tests, because
+`dist/` is gitignored and nothing otherwise stopped `npm publish` from shipping a stale build or none
+at all — silently, and unrecoverably after 72 hours. The README's install section leads with
+`npx mcp-memorybank` and keeps the clone-and-build path below it, labelled as what it is: fine while
+developing, wrong for anything you intend to keep. And the `CLAUDE.md` block in the README was still
+the superseded five-tool version — the one the experiment beat — which is the version every new user
+would have copied. It now carries the measured wording and the numbers behind it.
+
+**Not done:** actually submitting to the catalogue, and the separate question of whether to publish
+to npm at all. `npm whoami` returns 401 — there is no account logged in on this machine, which is a
+step only its owner can take. The name `mcp-memorybank` is free. The argument for npm is not the catalogue; it is that four projects on this machine
+wire the server with an absolute path to `dist/cli.js`, which breaks the moment the repository moves
+and has never worked on any other machine.
 
 ### C-03. Remove the tie to the author's machine — **done**
 

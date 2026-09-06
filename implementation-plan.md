@@ -2,14 +2,14 @@
 title: "An MCP server over memory_bank — implementation plan"
 doc_kind: feature
 doc_function: canonical
-purpose: "Implementation plan for memorybank-mcp: the order of stages, what each contains, readiness criteria, and how the index and ranking are built."
+purpose: "Implementation plan for mcp-memorybank: the order of stages, what each contains, readiness criteria, and how the index and ranking are built."
 derived_from:
   - specification.md
 status: active
 audience: humans_and_agents
 ---
 
-# memorybank-mcp implementation plan
+# mcp-memorybank implementation plan
 
 Derived from [specification.md](specification.md). The spec answers "what and why"; this plan
 answers "in what order, and how do we know it works".
@@ -136,7 +136,7 @@ The walk, frontmatter parsing (`gray-matter`), **both forms of `derived_from`** 
 an object `{ path, fit }` — resolution relative to the document's directory, layer computation,
 reading the contract from `dna/`.
 
-CLI: `memorybank-mcp --root <path> --stats` prints statistics without starting MCP.
+CLI: `mcp-memorybank --root <path> --stats` prints statistics without starting MCP.
 
 **Readiness:** `--stats` gives 95 documents on the mid-sized bank and 368 on the largest, zero parse
 errors anywhere, 15 edges with `fit` recognised as the object form.

@@ -116,7 +116,7 @@ function printStats(bank: Bank, ms: number): void {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   if (!args.root) {
-    console.error('usage: memorybank-mcp --root <path-to-memory_bank> [--stats | --route "question" | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox | --init "Project Name" [--force] [--dry-run]]')
+    console.error('usage: mcp-memorybank --root <path-to-memory_bank> [--stats | --route "question" | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox | --init "Project Name" [--force] [--dry-run]]')
     process.exit(2)
   }
 

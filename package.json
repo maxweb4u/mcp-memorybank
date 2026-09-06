@@ -1,14 +1,13 @@
 {
-  "name": "memorybank-mcp",
+  "name": "mcp-memorybank",
   "version": "0.1.0",
-  "description": "MCP server over a memory_bank knowledge base: routing without reading, governance validation, dependency graph and governed writes",
+  "description": "Seeds, governs and navigates a memory_bank knowledge base: gated writes, routing without reading, drift against the code",
   "license": "MIT",
-  "author": "",
+  "author": "Max Gornostayev",
   "type": "module",
   "bin": {
-    "memorybank-mcp": "./dist/cli.js"
+    "mcp-memorybank": "./dist/cli.js"
   },
-  "main": "./dist/server.js",
   "engines": {
     "node": ">=22"
   },
@@ -22,15 +21,19 @@
     "ssot",
     "markdown",
     "frontmatter",
-    "claude"
+    "claude",
+    "mcp-server",
+    "adr",
+    "documentation-as-code"
   ],
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/maxweb4u/mcp-memorybank.git"
   },
-  "homepage": "",
+  "homepage": "https://github.com/maxweb4u/mcp-memorybank#readme",
   "files": [
     "dist",
+    "!dist/**/*.map",
     "hooks",
     "starter",
     "README.md",
@@ -41,7 +44,8 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:corpus": "vitest run test/acceptance.test.ts",
-    "stats": "node dist/cli.js --stats --root"
+    "stats": "node dist/cli.js --stats --root",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -52,5 +56,8 @@
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
     "vitest": "^4.1.11"
+  },
+  "bugs": {
+    "url": "https://github.com/maxweb4u/mcp-memorybank/issues"
   }
 }

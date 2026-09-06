@@ -20,4 +20,4 @@ Record here what changed in `dna/` and `flows/`, not what changed in the project
 
 ## Unreleased
 
-- Bank created from the `memorybank-mcp` starter set.
+- Bank created from the `mcp-memorybank` starter set.
