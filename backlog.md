@@ -292,7 +292,8 @@ Why this matters more than it looks: copying from an existing bank **would have 
 the `feature-flow.md` defect we are fixing in five. Seeding from a versioned set does not do that.
 
 **Done.** The starter set is in `starter/`, the tool is `bank_init`, the CLI flag is `--init`. A fresh
-bank is 50 files and validates with zero findings. Along the way, three defects inherited from the
+bank was 50 files at the time and validated with zero findings — B-09 and B-10 later cut it to 24,
+which still validates with zero findings. Along the way, three defects inherited from the
 donor were found and fixed in the set: the broken edge to `developer-docs-commands-safety.md`, the
 reference to a nonexistent `testing-policy.md`, and the `doc_kind`/`doc_function` tables in
 governance lagging behind what the set itself uses (`process`, `prompt`, `epic`, `feature-support`
@@ -359,13 +360,13 @@ The item said to point at all of `flows/`. The first full test run said what tha
 more than the note anticipated: with the prose flows absent, `bank_route` could no longer answer a
 question about the project's own procedure — it returned `features/README.md` for "how a feature
 package moves through its gates" — and a person cloning the repository could not read the flow at
-all. The 45 KB feature flow is not machinery; it is the procedure people follow.
+all. The 44 KB feature flow is not machinery; it is the procedure people follow.
 
 So the line falls **inside** `flows/`:
 
 ```
-flows/*.md            4 files, 68 KB   copied — read by people, ranked by routing
-flows/templates/     24 files, 140 KB  pointed at — read by bank_create and nothing else
+flows/*.md            4 files,  58 KB  copied — read by people, ranked by routing
+flows/templates/     24 files,  91 KB  pointed at — read by bank_create and nothing else
 ```
 
 Templates are the right half to reference: routing skips them by construction
@@ -409,7 +410,8 @@ A public repository, a README with wiring instructions, a LICENSE, a working `bi
 and `github.com/maxweb4u/mcp-memorybank` is public and current.
 
 `npm pack` was checked the only way worth checking it — build the tarball, install it into an empty
-project, and run the result:
+project, and run the result. **Measured 5 September 2026, before B-09 and B-10**; the seed is 24
+files now, and the tarball is correspondingly smaller. The check itself still stands.
 
 ```
 files 61 · 112 kB packed · 380 kB unpacked

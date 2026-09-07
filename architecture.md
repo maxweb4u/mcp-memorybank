@@ -30,9 +30,9 @@ The fourteen directories are not fourteen of anything. They are three:
 
 | | What it is | Size on day one | Who writes it afterwards |
 |---|---|---|---|
-| `dna/` | the bank's own law | 8 documents, 32 KB | copied once, then the bank's own |
+| `dna/` | the bank's own law | 8 documents, 11 KB | copied once, then the bank's own |
 | 11 sections | the shelves | 11 indexes, otherwise empty | the project |
-| `flows/` | procedures and templates | 28 documents, 208 KB | copied once, rarely touched |
+| `flows/` | procedures and templates | 28 documents, 149 KB | copied once, rarely touched |
 
 **`dna/`** is the constitution: `principles.md` (the root), `governance.md` (SSoT and ownership),
 `frontmatter.md` (the field contract), `lifecycle.md`, `cross-references.md`, `glossary.md`,
@@ -42,7 +42,10 @@ The fourteen directories are not fourteen of anything. They are three:
 of this kind is registered here."* The point is that the first document of any kind already has a
 registered home rather than landing somewhere and being linked later — or never.
 
-**`flows/`** is 84% of the starter set by volume. `feature-flow.md` alone is 45 KB.
+**`flows/`** is 92% of the starter set by volume. `feature-flow.md` alone is 44 KB.
+
+*(Sizes here and below are content bytes. An earlier draft of this document reported `du` figures —
+disk allocation, which for 24 small files overstates the text by half.)*
 
 ## The invisible axis: layers
 
@@ -210,14 +213,14 @@ the empty ceremony.
 
 **Only the templates are pointed at, not all of `flows/`.** This is where the original proposal was
 wrong and the test suite said so: with the prose flows absent, routing could no longer answer a
-question about the project's own procedure. The 45 KB feature flow is what people read; the 140 KB
+question about the project's own procedure. The 44 KB feature flow is what people read; the 91 KB
 of fill-in-the-blanks behind it is what nobody does. So the flows stay and the templates go, with
 `bank_create` falling through to the shipped set and `--materialize-flows` for a project that means
 to diverge.
 
 ## What none of it fixed
 
-Weakness 2 above is only half addressed. Volume is handled — 140 KB per bank stops being copied —
+Weakness 2 above is only half addressed. Volume is handled — 91 KB per bank stops being copied —
 but the divergence that actually cost something was in `dna/governance.md`, and `dna/` is still
 copied on purpose: it is the law the bank is judged by, and it has to travel with the corpus. A bank
 whose contract is a year behind still cannot see that, because it only ever reads its own.

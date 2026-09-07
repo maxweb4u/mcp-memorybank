@@ -251,3 +251,89 @@ without the mechanism the lines have nothing to point at.
 Routing on a bank too large to read, for the reason in F-13. `bank_graph down` on a bank with years of
 history — the blast radius of a ten-document bank is visible without it. And whether `_inbox` capture
 stays useful past the three-week mark, or silts up.
+
+# A fifth bank, on the build that came after
+
+`maxesoft.com`, seeded and worked 6 September — the first bank built by the post-B-08/B-09/B-10
+server, and the first where the wiring was in place before the first line of the project existed. A
+static personal site: no code, no history, an empty repository apart from the bank. Two sessions,
+roughly six hours.
+
+The bank was reconstructed from the outside afterwards, by diffing it against a fresh `bank_init` and
+by counting tool calls in the session transcript. Nothing in it was arranged for the measurement.
+
+## Every byte in the bank came through the server
+
+```
+27 documents · 89 KB · validate: 0 findings · 40 edges, 0 unresolved · 0 canonical conflicts
+```
+
+Against a fresh seed of the same build, the bank differs in exactly six places: three `_inbox/`
+documents that did not exist, and three seed files that were filled in — `product/context.md`
+(934 → 3045 bytes), `engineering/testing-policy.md` (1612 → 3699), and the root index, which carries
+the project name.
+
+**Write and Edit calls whose target was inside `memory_bank/`: zero. Shell writes: zero.** The two
+Bash commands that mention the bank at all are both `ls`. The full sequence of governed calls, in
+order of execution:
+
+```
+bank_route            1
+bank_create           4   all with inbox: true
+bank_update_section  12
+bank_set_status       2   product/context.md and engineering/testing-policy.md, draft → active
+bank_validate         2
+bank_discard          1
+```
+
+## What each number says
+
+**`bank_update_section` is the most-used tool in the session, by three to one.** That is B-01 — the
+item whose shape was undecided a month ago because §8 of the specification said the server does not
+edit existing documents. Twelve calls: four sections of `context.md`, five into `testing-policy.md`
+(one section revisited), three into an inbox note. The measurement that reversed the constraint now
+has its second reading.
+
+**`bank_discard` was used once, correctly, and unprompted.** The agent created
+`_inbox/20260906-source-locations.md`, validated, discarded it, and created it again. A document it
+judged wrong was withdrawn through the governed path rather than overwritten.
+
+**`bank_set_status` fired twice without being asked.** Two seed drafts became `active` once they held
+content. That is the transition B-02 proposed to automate, and the second bank in a row — after
+`idelo`'s four — where the manual path was taken freely. The November revisit looks less likely to
+find a gap worth closing.
+
+**`bank_route` was called once**, at the start, in Russian:
+*«контекст продукта: сайт-визитка разработчика, услуги, дизайн, стек»* — B-05 handling a query typed
+the way its author actually types. Once, and never again. On a 27-document bank that is F-13 exactly
+as predicted: routing loses to "already in context" the moment the corpus fits in one. The one call
+was orientation, and it was the right one to make.
+
+**Three sections were never touched.** `epics/`, `prd/` and `prompts/` were not seeded by this build
+and were not needed — a fifth bank agreeing with the four B-09 was decided on. `flows/templates/`
+was not materialized either; nothing in the session wanted a template the server did not already
+carry.
+
+## The hook, on its second live outing
+
+Four Stop hooks blocked; each was followed by a governed capture and a clean pass on the next stop.
+Four blocks, four `bank_create` calls with `inbox: true`, three surviving documents. The
+cooldown-and-fingerprint fix from A-05 is doing what it was built for: the three captures landed at
+18:33, 19:27 and 22:09, spread across the working session rather than bunched at the start.
+
+The captures are the point, though, more than the count. What ended up in `_inbox/` is three things
+no repository could have recorded: a list of accepted scope decisions with the rejected options named,
+the paths to source material that lives outside the repository entirely, and three verification
+gotchas that cost an hour each — headless Chrome ignoring a window width below 500 px,
+`scroll-behavior: smooth` defeating scripted scrolling, and npmjs answering 403 to curl.
+
+That last file is the clearest answer yet to "why not just read the code". None of it is in the code.
+Two of the three facts are about tools that are not in this repository, and the third is about a
+website that is not either.
+
+## What it did not settle
+
+The bank is 27 documents, so routing is still unmeasured, for the fourth time and the same reason.
+Nothing was promoted out of `_inbox/` — three drafts are sitting there, which is correct after one
+day and a silt problem after three weeks. And no document in this bank carries `anchors:`, so
+`bank_drift` has not been exercised on a project whose code is still being written.

@@ -1,10 +1,10 @@
 /**
- * B-10. `flows/` was 208 KB copied verbatim into every bank and then quietly forked. The item as
+ * B-10. `flows/` was 149 KB copied verbatim into every bank and then quietly forked. The item as
  * written said to point at all of it; the first full test run said otherwise, and the line ended up
  * inside `flows/`:
  *
- *   - the four prose flows (68 KB) are copied — people read them, and `bank_route` answers with them
- *   - `flows/templates/` (140 KB, 24 files) is pointed at — nobody reads a template as prose,
+ *   - the four prose flows (58 KB) are copied — people read them, and `bank_route` answers with them
+ *   - `flows/templates/` (91 KB, 24 files) is pointed at — nobody reads a template as prose,
  *     routing skips them by construction, and four measured banks had not customised one
  *
  * Everything below is about the second half behaving as if the files were there.

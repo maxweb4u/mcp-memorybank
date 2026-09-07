@@ -134,8 +134,8 @@ it reports without editing: whether a six-month gap matters is not a judgement a
 
 ### What a seeded bank contains
 
-`bank_init` writes 24 files: the governance set in `dna/`, eight section registries, the four flow
-documents, and two drafts to fill in. Three more sections — `epics`, `prd`, `prompts` — are built
+`bank_init` writes 24 files: the governance set in `dna/`, a root index, eight section registries,
+the four flow documents, a pointer where the templates would be, and two drafts to fill in. Three more sections — `epics`, `prd`, `prompts` — are built
 the first time a document needs one, index and root-index entry included, rather than standing empty
 from the start.
 

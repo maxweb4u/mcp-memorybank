@@ -198,7 +198,7 @@ export function pickTemplate(bank: Bank, docKind: string, targetPath: string): B
  * The template text for a new document, from the bank if it has one and from the set the server
  * ships if it does not.
  *
- * `bank_init` no longer copies 208 KB of `flows/` into every bank (B-10). A bank that never
+ * `bank_init` no longer copies 149 KB of `flows/` into every bank (B-10). A bank that never
  * customised its templates should behave exactly as if it had them, so the lookup falls through to
  * the shipped copy rather than warning that no template matched. A bank that *did* customise wins,
  * always: the bank's own file is checked first and the fallback never overrides it.

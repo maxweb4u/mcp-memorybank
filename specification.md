@@ -349,4 +349,4 @@ Each of these was a measurement, not a change of mind. The record is in
 | — | `bank_drift` | validation cannot see the failure that matters most: what was written going stale |
 | layers fixed in the server | declared in `dna/` | it was the one rule the server imposed rather than read, and it failed silently |
 | eleven sections seeded | eight, the rest on first use | three were index-only in all four banks measured |
-| templates copied into each bank | pointed at, with `bank_create` falling through | 140 KB identical in every bank, customised in none, and copies fork |
+| templates copied into each bank | pointed at, with `bank_create` falling through | 91 KB identical in every bank, customised in none, and copies fork |

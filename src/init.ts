@@ -15,8 +15,8 @@ export const STARTER = path.join(path.dirname(fileURLToPath(import.meta.url)), '
  * about the project's own procedure, and a person cloning the repository could not read it at all.
  *
  * So the line falls inside `flows/`. The four prose documents — the feature flow, the epic flow,
- * `workflows.md` and the index — are 68 KB, they are read by people, and routing ranks them. They
- * are copied. `flows/templates/` is 140 KB across 24 files that nobody reads as prose, that routing
+ * `workflows.md` and the index — are 58 KB, they are read by people, and routing ranks them. They
+ * are copied. `flows/templates/` is 91 KB across 24 files that nobody reads as prose, that routing
  * deliberately skips (`doc_function: template`), and that four measured banks had not customised.
  * That is the part that is pointed at.
  */
@@ -146,7 +146,7 @@ routing. Only the fill-in-the-blanks templates behind them are not.
 
 ## Why not copy them
 
-Twenty-four files and 140 KB, identical in every bank, that nobody reads as prose and that routing
+Twenty-four files and 91 KB, identical in every bank, that nobody reads as prose and that routing
 skips on purpose. Copies fork: measured across four projects none had customised a template, while
 the copies had already begun to drift — and a bank cannot notice that its templates are a year
 behind another bank's, because each one only ever reads its own.
