@@ -72,7 +72,14 @@ Two things are being checked, and neither is visible from the source tree:
 mcp-publisher validate
 ```
 
-**8. Commit steps 2–4 as one commit.**
+**8. Check that no pin was missed, then commit steps 2–4 as one commit.**
+
+```bash
+grep -rn "mcp-memorybank@" README.md releasing.md
+```
+
+This step exists because it was skipped in the release that first wrote this file down, and the
+README pin went out a version behind.
 
 **9. Publish to npm.**
 

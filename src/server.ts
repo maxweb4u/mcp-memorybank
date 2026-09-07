@@ -14,6 +14,7 @@ import { drift } from './drift.js'
 import { create, discard, inbox, promote } from './create.js'
 import { init, materializeFlows } from './init.js'
 import { edit, setStatus, updateSection } from './update.js'
+import { type Surface, surfaceFor } from './surface.js'
 
 const LAYERS = ['dna', 'knowledge', 'decision', 'delivery', 'flow', 'other'] as const
 
@@ -40,20 +41,50 @@ function fail(message: string) {
   return { content: [{ type: 'text' as const, text: message }], isError: true }
 }
 
+/** What registerTool, registerResource and registerPrompt all hand back. */
+interface Toggle {
+  enabled: boolean
+  enable(): void
+  disable(): void
+}
+
+const INSTRUCTIONS: Record<Surface, string> = {
+  full:
+    'Navigation and governance over a memory_bank knowledge base. ' +
+    'Start every session by reading memorybank://index, then call bank_route before reading any file. ' +
+    'Bank documents are written in English, but the question need not be: the server expands a Russian ' +
+    'query into the English terms the documents use. Pass the question as the user asked it.',
+  seed:
+    'This project has no memory_bank yet, so only bank_init is offered. Call it when the user asks for ' +
+    'a knowledge base, and not otherwise. The rest of the surface appears by itself once a bank exists.',
+  off: 'Disabled for this project by a .memorybank-off marker. Nothing here is available.',
+}
+
 export async function startServer(bank: Bank): Promise<void> {
   const searchIndex = new SearchIndex()
+  const surface = await surfaceFor(bank.root)
   const server = new McpServer(
     { name: 'memorybank', version: VERSION },
-    {
-      instructions:
-        'Navigation and governance over a memory_bank knowledge base. ' +
-        'Start every session by reading memorybank://index, then call bank_route before reading any file. ' +
-        'Bank documents are written in English, but the question need not be: the server expands a Russian ' +
-        'query into the English terms the documents use. Pass the question as the user asked it.',
-    },
+    { instructions: INSTRUCTIONS[surface] },
   )
 
-  server.registerTool(
+  /**
+   * Registration is unconditional; what varies is what stays enabled. A disabled entry is absent
+   * from tools/list, so the client never sees it and never pays for its definition — which is the
+   * whole point, since the definitions are the cost.
+   */
+  const handles = new Map<string, Toggle>()
+  const keep = <T extends Toggle>(name: string, handle: T): T => {
+    handles.set(name, handle)
+    return handle
+  }
+
+  /** Everything but bank_init, which is the only call that makes sense without a bank. */
+  const openUp = (): void => {
+    for (const [name, handle] of handles) if (name !== 'bank_init' && !handle.enabled) handle.enable()
+  }
+
+  keep('bank_route', server.registerTool(
     'bank_route',
     {
       title: 'Route a question to documents',
@@ -82,9 +113,9 @@ export async function startServer(bank: Bank): Promise<void> {
       }
       return json({ results })
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_read', server.registerTool(
     'bank_read',
     {
       title: 'Read bank documents',
@@ -121,9 +152,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_init', server.registerTool(
     'bank_init',
     {
       title: 'Create a bank where there is none',
@@ -146,14 +177,18 @@ export async function startServer(bank: Bank): Promise<void> {
     async ({ name, dryRun, force }) => {
       await bank.refresh()
       try {
-        return json(await init(bank, { name, dryRun, force }))
+        const result = await init(bank, { name, dryRun, force })
+        // The bank exists now, so the rest of the surface becomes usable in this same session.
+        // enable() notifies the client itself; sending list_changed here as well only duplicates it.
+        if (!dryRun) openUp()
+        return json(result)
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_create', server.registerTool(
     'bank_create',
     {
       title: 'Create a governed document',
@@ -200,9 +235,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_edit', server.registerTool(
     'bank_edit',
     {
       title: 'Replace one exact fragment of a document',
@@ -230,9 +265,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_update_section', server.registerTool(
     'bank_update_section',
     {
       title: 'Write one named section of an existing document',
@@ -271,9 +306,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_set_status', server.registerTool(
     'bank_set_status',
     {
       title: 'Move a document to another lifecycle status',
@@ -308,9 +343,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_promote', server.registerTool(
     'bank_promote',
     {
       title: 'Promote a captured note out of quarantine',
@@ -341,9 +376,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_discard', server.registerTool(
     'bank_discard',
     {
       title: 'Drop a captured note that is not worth keeping',
@@ -368,9 +403,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_search', server.registerTool(
     'bank_search',
     {
       title: 'Full-text search of document bodies',
@@ -396,9 +431,9 @@ export async function startServer(bank: Bank): Promise<void> {
       }
       return json({ results })
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_changed', server.registerTool(
     'bank_changed',
     {
       title: 'What moved in the bank since a point in time',
@@ -418,9 +453,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_materialize_flows', server.registerTool(
     'bank_materialize_flows',
     {
       title: 'Take ownership of the document templates',
@@ -443,9 +478,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_drift', server.registerTool(
     'bank_drift',
     {
       title: 'Where the code has moved on without the document',
@@ -476,9 +511,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_graph', server.registerTool(
     'bank_graph',
     {
       title: 'Walk the derived_from graph',
@@ -515,9 +550,9 @@ export async function startServer(bank: Bank): Promise<void> {
         return fail(err instanceof Error ? err.message : String(err))
       }
     },
-  )
+  ))
 
-  server.registerTool(
+  keep('bank_validate', server.registerTool(
     'bank_validate',
     {
       title: 'Check the bank against its own governance',
@@ -546,9 +581,9 @@ export async function startServer(bank: Bank): Promise<void> {
         findings,
       })
     },
-  )
+  ))
 
-  server.registerResource(
+  keep('index', server.registerResource(
     'index',
     'memorybank://index',
     {
@@ -582,9 +617,9 @@ export async function startServer(bank: Bank): Promise<void> {
         ],
       }
     },
-  )
+  ))
 
-  server.registerResource(
+  keep('frontmatter-schema', server.registerResource(
     'frontmatter-schema',
     'memorybank://schema/frontmatter',
     {
@@ -601,10 +636,10 @@ export async function startServer(bank: Bank): Promise<void> {
         : 'This bank has no dna/frontmatter.md. The server runs in degraded mode: routing and reading only, no contract checks.'
       return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text }] }
     },
-  )
+  ))
 
 
-  server.registerResource(
+  keep('health', server.registerResource(
     'health',
     'memorybank://health',
     {
@@ -639,10 +674,10 @@ export async function startServer(bank: Bank): Promise<void> {
         ],
       }
     },
-  )
+  ))
 
 
-  server.registerResource(
+  keep('inbox', server.registerResource(
     'inbox',
     'memorybank://inbox',
     {
@@ -665,9 +700,9 @@ export async function startServer(bank: Bank): Promise<void> {
         ],
       }
     },
-  )
+  ))
 
-  server.registerPrompt(
+  keep('session-start', server.registerPrompt(
     'session-start',
     {
       title: 'Open a session on this bank',
@@ -704,10 +739,10 @@ export async function startServer(bank: Bank): Promise<void> {
         },
       ],
     }),
-  )
+  ))
 
 
-  server.registerPrompt(
+  keep('route-then-read', server.registerPrompt(
     'route-then-read',
     {
       title: 'Route before reading',
@@ -729,10 +764,10 @@ export async function startServer(bank: Bank): Promise<void> {
         },
       ],
     }),
-  )
+  ))
 
 
-  server.registerPrompt(
+  keep('check-before-commit', server.registerPrompt(
     'check-before-commit',
     {
       title: 'Check the bank before committing',
@@ -755,10 +790,10 @@ export async function startServer(bank: Bank): Promise<void> {
         },
       ],
     }),
-  )
+  ))
 
 
-  server.registerPrompt(
+  keep('record-adr', server.registerPrompt(
     'record-adr',
     {
       title: 'Record a decision as an ADR',
@@ -785,10 +820,10 @@ export async function startServer(bank: Bank): Promise<void> {
         },
       ],
     }),
-  )
+  ))
 
 
-  server.registerPrompt(
+  keep('review-inbox', server.registerPrompt(
     'review-inbox',
     {
       title: 'Review the quarantine',
@@ -815,7 +850,13 @@ export async function startServer(bank: Bank): Promise<void> {
         },
       ],
     }),
-  )
+  ))
+
+  if (surface !== 'full') {
+    for (const [name, handle] of handles) {
+      if (surface === 'off' || name !== 'bank_init') handle.disable()
+    }
+  }
 
   await server.connect(new StdioServerTransport())
 }
