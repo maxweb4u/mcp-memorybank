@@ -158,6 +158,66 @@ rule the bank has not declared. It does not delete a document outside `_inbox/`.
 index, validate or search anything outside the bank root — the one hop `bank_graph` takes into a
 neighbouring bank reads a header and stops there.
 
+### What it costs in tokens
+
+Wiring a server in is not free, and the cost is paid in two different currencies. All figures below
+were measured on the shipped build, counting characters of the actual JSON-RPC payloads and
+converting at 3.5 characters per token — dense JSON runs closer to that than the 4 that suits prose.
+
+**The fixed half is paid on every request**, whether a tool is called or not, because the
+definitions live in the context:
+
+| | characters | ~tokens |
+|---|---|---|
+| server instructions | 343 | 98 |
+| 15 tool definitions | 20,473 | 5,849 |
+| 5 prompts | 1,357 | 388 |
+| 4 resources | 913 | 261 |
+| **total, per request** | **23,086** | **~6,600** |
+
+`bank_create` is the most expensive definition at ~715 tokens — seven parameters and a description
+that has to explain the gate. `bank_changed` is the cheapest at ~183. A session that never reaches
+for a tool has paid ~6,600 tokens for nothing, and that is the only place the server is pure waste.
+
+**The variable half is where it earns the fixed half back.** On a 27-document bank:
+
+| | characters | ~tokens |
+|---|---|---|
+| reading the whole bank | 91,319 | 26,091 |
+| a `bank_route` answer, 3 results | 839 | **240** |
+| the three documents it named | 8,386 | 2,396 |
+
+Routing answers in 240 tokens what reading the corpus costs 26,091 — and a tenth of what reading
+even the correct three documents costs, because it returns paths, titles, `purpose` and a line of
+reasoning rather than any prose. What to read afterwards is then a decision made on evidence.
+
+`bank_read` is separately bounded: 40,000 bytes per batch, roughly 11,000 tokens. Ask for twenty
+documents and you get what fits plus a list of what the budget did not reach, broken down by
+section, so a single call cannot flood the context.
+
+**Where the break-even sits.** The ~6,600 is repaid the first time the server prevents one
+unnecessary read, and that happens immediately on any bank large enough to matter. Measured across
+four banks of the same lineage:
+
+```
+ 27 documents    ~26k tokens to read whole
+ 78 documents    ~87k
+ 96 documents   ~158k
+112 documents   ~305k
+```
+
+At the top of that range the corpus is two full context windows and reading it is not an option at
+any price, while a routed answer stays in the low hundreds of tokens.
+
+The honest conclusion is that **on a small bank the server loses**. While the corpus still fits in a
+context window, `cat` is cheaper than a 6,600-token standing charge, and the field test measured
+exactly that: on a bank small enough to read whole, routing competes with "already in context" and
+loses. The server earns its cost on corpora that have outgrown being read.
+
+And tokens are not the main thing being bought. Half the tools save nothing at all — `bank_create`,
+`bank_validate` and `bank_drift` only spend. They exist so the bank keeps its shape, which no amount
+of context budget will do on its own. The saving on routing is a side effect, not the point.
+
 ## Running it
 
 Wiring it into a project — `<project>/.mcp.json`:
@@ -173,7 +233,7 @@ Wiring it into a project — `<project>/.mcp.json`:
 }
 ```
 
-Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.1.1` — so the server does not
+Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.1.2` — so the server does not
 change shape underneath a project you are not looking at.
 
 The package is scoped because npm's similarity check will not accept `mcp-memorybank` unscoped: it
