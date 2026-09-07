@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.maxweb4u/memorybank",
+  "description": "Seeds, governs and navigates a memory_bank knowledge base: gated writes, routing, drift vs code",
+  "repository": {
+    "url": "https://github.com/maxweb4u/mcp-memorybank",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@maxweb4u/mcp-memorybank",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--root",
+          "description": "Path to the project's memory_bank directory. The server indexes and governs this directory and nothing outside it.",
+          "isRequired": true,
+          "format": "filepath",
+          "valueHint": "./memory_bank"
+        }
+      ]
+    }
+  ]
+}
