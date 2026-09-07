@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -16,6 +17,21 @@ import { edit, setStatus, updateSection } from './update.js'
 
 const LAYERS = ['dna', 'knowledge', 'decision', 'delivery', 'flow', 'other'] as const
 
+/**
+ * Read from the package rather than written here. A literal drifts silently: 0.1.1 shipped
+ * announcing 0.1.0, and nothing in the build or the tests could have caught it — the number is
+ * only ever seen by a client on the other side of the transport. npm puts `package.json` in every
+ * tarball whatever `files` says, so this resolves the same from a clone and from an install.
+ */
+const VERSION: string = (() => {
+  try {
+    const pkg = createRequire(import.meta.url)('../package.json') as { version?: string }
+    return pkg.version ?? '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+})()
+
 function json(value: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] }
 }
@@ -27,7 +43,7 @@ function fail(message: string) {
 export async function startServer(bank: Bank): Promise<void> {
   const searchIndex = new SearchIndex()
   const server = new McpServer(
-    { name: 'memorybank', version: '0.1.0' },
+    { name: 'memorybank', version: VERSION },
     {
       instructions:
         'Navigation and governance over a memory_bank knowledge base. ' +

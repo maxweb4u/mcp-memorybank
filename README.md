@@ -173,7 +173,7 @@ Wiring it into a project — `<project>/.mcp.json`:
 }
 ```
 
-Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.1.0` — so the server does not
+Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.1.1` — so the server does not
 change shape underneath a project you are not looking at.
 
 The package is scoped because npm's similarity check will not accept `mcp-memorybank` unscoped: it
