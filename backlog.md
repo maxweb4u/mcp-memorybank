@@ -233,6 +233,78 @@ those would be resolved by refreshing one file. See [architecture.md](architectu
 Roughly forty lines and one CLI flag: two bank roots in, the difference between their parsed
 contracts out. Show, never migrate — the same rule `bank_drift` follows.
 
+**Planned 7 September, not started.** The forty-line estimate is for the set difference alone; the
+half that makes it worth building is the second half, and it roughly doubles the size.
+
+*What it must answer.* Not "these files differ" but: which values this bank permits, which it does
+not, and **how many of its own documents are outside its law because of it.** The difference between
+those two questions is the difference between a useless diff and the finding this item exists for —
+on the 378-document bank the second phrasing produced "91 of 118 documents are fixed by refreshing
+one file".
+
+*Where the other contract comes from.* Two sources and no more. By default the starter set the
+server ships, because that is the case that costs: `dna/` is copied once and forks from then on. On
+demand, another bank root given as an argument. There is no registry of contracts on the server and
+there will not be one.
+
+Read the other bank's `dna/` directory directly rather than indexing it. Eight files against a cold
+index of 199 ms is the smaller reason; the larger one is that indexing a foreign corpus is the server
+reading someone else's bank on its own initiative, which is the thing it does not do.
+
+*What is compared.* `parseContract` already returns exactly the right shape and needs no change: the
+five enum sets by difference in both directions, `requiresDerivedFrom` and `forbidsCycles` as boolean
+disagreements, `roots` by difference, and `source` — a bank with no `governance.md` at all is an
+answer in itself. Report each field as *only here*, *only there*, and a count in common. No diff of
+table text: reformatting a table must not read as a change to the contract, which is the whole point
+of the reframing above.
+
+*The half that matters.* For every value the other contract permits and this one does not, count the
+documents in this bank already using it, then group those counts by the `dna/` file the value came
+from and name the single file whose refresh resolves the most. That is what turns
+
+```
+doc_kind: the starter lists 4 more
+```
+
+into
+
+```
+doc_kind: 4 values in the starter, absent here
+  epic             8 documents already use it
+  feature-support  9
+  process          5
+  prompt           7   →  29 documents become legal
+```
+
+*Surfaces.* A CLI flag, `--contract-diff [<other bank root>]`, is the essential half: this is
+maintenance a person does. The tool `bank_contract_diff` is the other half and is not symmetry —
+when `bank_validate` returns 118 `unknown-enum-value` findings, an agent has nothing today with
+which to answer "is the bank wrong, or is its law stale". `readOnlyHint: true`, as `bank_drift` has.
+
+*The line.* Shows, never migrates. No `--fix`, no `--apply`. Deciding to refresh `dna/` is deciding
+which law the corpus is judged by, and a utility does not make that call; the output ends at naming
+the file.
+
+*Tests.* `test/contract-diff.test.ts`, around twelve cases: identical contracts reported as identical
+rather than as empty; a value absent here that nothing uses (shown, but not counted as a win); one
+that N documents use (counted as N); a value this bank has and the starter does not, shown as an
+extension and **not** as an error, because a bank may permit more; both boolean disagreements; a bank
+with no `dna/` at all handled as `present: false` rather than a crash; a second path that is missing
+or is not a bank, reported with the path and no guessing; grouping by source file picking the right
+winner when values come from two files; and the default target resolving out of the installed
+package, the same way `shippedTemplate` does.
+
+Acceptance belongs on the one corpus where the answer is known — 118 outside the law, 91 fixed by
+`dna/governance.md` — and that bank is not one this server reads on its own initiative. So it runs
+through `MEMORYBANK_TEST_ROOTS` like the rest of the corpus tier: on the owner's machine, when the
+owner says, and skipped in CI.
+
+*Order of work.* `src/contracts.ts`; tests on synthetic banks; the CLI flag; the tool, with a
+description that tells an agent when to reach for it; README — a row in the tool table and a
+paragraph in the validation section; close this entry with the measurement; and
+[architecture.md](architecture.md), where weakness 2 currently says "only half addressed" and would
+become closed.
+
 ### B-05. Russian-language queries to `bank_route` — **done**
 
 The banks are in English and ranking ran on English tokens, so a hand-typed Russian question returned

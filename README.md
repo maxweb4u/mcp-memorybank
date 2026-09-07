@@ -201,6 +201,13 @@ node dist/cli.js --root /path/to/project/memory_bank
 An `.mcp.json` written this way needs an absolute path to `dist/cli.js`, which ties the project to
 one checkout on one machine. Fine while developing, wrong for anything you intend to keep.
 
+**`npx` does not work inside this repository.** From the server's own checkout,
+`npx @maxweb4u/mcp-memorybank` fails with `sh: mcp-memorybank: command not found`: npx sees that the
+requested name matches the local `package.json`, decides the package is already present, and looks
+for the binary in the local `node_modules/.bin`, where nothing links it. Nothing is wrong with the
+published package — run the same command from any other directory and it works. So when you want to
+check what users actually get, do it from a temporary directory, not from here.
+
 ### Telling the agent to use it
 
 Wiring the server in makes the tools available; it does not make an agent reach for them. Left to

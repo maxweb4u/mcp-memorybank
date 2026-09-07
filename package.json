@@ -1,6 +1,7 @@
 {
   "name": "@maxweb4u/mcp-memorybank",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "mcpName": "io.github.maxweb4u/memorybank",
   "description": "Seeds, governs and navigates a memory_bank knowledge base: gated writes, routing without reading, drift against the code",
   "license": "MIT",
   "author": "Max Gornostayev",
