@@ -208,6 +208,10 @@ for the binary in the local `node_modules/.bin`, where nothing links it. Nothing
 published package — run the same command from any other directory and it works. So when you want to
 check what users actually get, do it from a temporary directory, not from here.
 
+Publishing a new version has an order that matters — what is verified on the tarball rather than the
+working tree, and which pins move before the publish and which only after. It is written down in
+[releasing.md](releasing.md).
+
 ### Telling the agent to use it
 
 Wiring the server in makes the tools available; it does not make an agent reach for them. Left to
