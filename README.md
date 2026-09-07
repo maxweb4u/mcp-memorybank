@@ -167,20 +167,24 @@ Wiring it into a project — `<project>/.mcp.json`:
   "mcpServers": {
     "memorybank": {
       "command": "npx",
-      "args": ["-y", "mcp-memorybank", "--root", "./memory_bank"]
+      "args": ["-y", "@maxweb4u/mcp-memorybank", "--root", "./memory_bank"]
     }
   }
 }
 ```
 
-Pin the version once you rely on it — `mcp-memorybank@0.1.0` — so the server does not change shape
-underneath a project you are not looking at.
+Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.1.0` — so the server does not
+change shape underneath a project you are not looking at.
+
+The package is scoped because npm's similarity check will not accept `mcp-memorybank` unscoped: it
+normalises punctuation away, which makes it indistinguishable from the unrelated `mcp-memory-bank`
+already in the registry. The command the package installs is still `mcp-memorybank`.
 
 If the project has no bank yet, seed one first. The command writes the skeleton, the governance set
 and one registered index per section, and a bank created this way validates clean by construction:
 
 ```bash
-npx mcp-memorybank --root ./memory_bank --init "Project Name"
+npx @maxweb4u/mcp-memorybank --root ./memory_bank --init "Project Name"
 ```
 
 Requires Node 22. The hook described in [hooks/README.md](hooks/README.md) also wants `jq` and `git`.
