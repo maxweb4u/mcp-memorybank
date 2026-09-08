@@ -148,3 +148,8 @@ The README pin is the opposite case and moves early, for the same reason: nothin
   reintroduce it.
 - **npm's similarity check ignores punctuation.** The unscoped name is unavailable for good; the
   package is scoped and the `bin` is not.
+- **`npm publish` without `--access public` fails as a 404.** A scoped package defaults to
+  restricted, restricted needs a paid account, and npm reports that as
+  `404 Not Found - PUT .../@maxweb4u%2fmcp-memorybank`, which reads like the package does not
+  exist. The tell is one word in the line above it: `default access` where a good run says
+  `public access`.
