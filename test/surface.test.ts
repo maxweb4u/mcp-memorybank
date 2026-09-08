@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Bank } from '../src/bank.js'
 import { init } from '../src/init.js'
-import { OFF_MARKER, hasBank, surfaceFor } from '../src/surface.js'
+import { OFF_MARKER, hasBank, isUnder, surfaceFor } from '../src/surface.js'
 
 let dir: string
 const made: string[] = []
@@ -98,5 +98,65 @@ describe('hasBank', () => {
     } finally {
       process.chdir(cwd)
     }
+  })
+})
+
+describe('paths switched off from the client config', () => {
+  beforeEach(async () => {
+    const bank = new Bank(root())
+    await init(bank, { name: 'Off By Path' })
+  })
+
+  it('turns off a bank named exactly', async () => {
+    expect(await surfaceFor(root(), [dir])).toBe('off')
+  })
+
+  it('turns off a bank nested any number of levels below', async () => {
+    // The case this exists for: one commercial project holding three banks at different depths.
+    const deep = path.join(dir, 'backend', 'service', 'memory_bank')
+    await init(new Bank(deep), { name: 'Deep' })
+    expect(await surfaceFor(deep, [dir])).toBe('off')
+  })
+
+  it('leaves a sibling whose name merely starts the same alone', async () => {
+    expect(await surfaceFor(root(), [`${dir}X`])).toBe('full')
+  })
+
+  it('accepts several paths and matches any of them', async () => {
+    expect(await surfaceFor(root(), ['/nowhere', dir])).toBe('off')
+  })
+
+  it('changes nothing when none of them match', async () => {
+    expect(await surfaceFor(root(), ['/nowhere', '/also-nowhere'])).toBe('full')
+  })
+
+  it('applies to a project with no bank as well', async () => {
+    const empty = path.join(dir, 'fresh', 'memory_bank')
+    expect(await surfaceFor(empty, [dir])).toBe('off')
+  })
+
+  it('writes nothing into the project it switches off', async () => {
+    const before = (await fs.readdir(dir)).sort()
+    await surfaceFor(root(), [dir])
+    expect((await fs.readdir(dir)).sort()).toEqual(before)
+  })
+})
+
+describe('isUnder', () => {
+  it('matches a directory against itself', () => {
+    expect(isUnder('/a/b', '/a/b')).toBe(true)
+  })
+
+  it('matches on whole segments only', () => {
+    expect(isUnder('/a/bc', '/a/b')).toBe(false)
+    expect(isUnder('/a/b/c', '/a/b')).toBe(true)
+  })
+
+  it('normalises before comparing, so a relative path still matches', () => {
+    expect(isUnder('/a/b/../b/c', '/a/b')).toBe(true)
+  })
+
+  it('tolerates a trailing separator on the parent', () => {
+    expect(isUnder('/a/b/c', '/a/b/')).toBe(true)
   })
 })

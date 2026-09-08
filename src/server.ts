@@ -60,9 +60,9 @@ const INSTRUCTIONS: Record<Surface, string> = {
   off: 'Disabled for this project by a .memorybank-off marker. Nothing here is available.',
 }
 
-export async function startServer(bank: Bank): Promise<void> {
+export async function startServer(bank: Bank, off: readonly string[] = []): Promise<void> {
   const searchIndex = new SearchIndex()
-  const surface = await surfaceFor(bank.root)
+  const surface = await surfaceFor(bank.root, off)
   const server = new McpServer(
     { name: 'memorybank', version: VERSION },
     { instructions: INSTRUCTIONS[surface] },

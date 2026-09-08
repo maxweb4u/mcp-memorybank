@@ -179,7 +179,7 @@ definitions live in the context:
 that has to explain the gate. `bank_changed` is the cheapest at ~183.
 
 That table is what a project **with a bank** pays. A project that has none is offered `bank_init`
-alone and pays ~450; one carrying a `.memorybank-off` file pays ~25 for an empty surface. See
+alone and pays ~450; one switched off — by `--off` or a `.memorybank-off` file — pays ~25 for an empty surface. See
 [Installing it once, for every project](#installing-it-once-for-every-project) — the reason the
 server bothers to make that distinction is that a global install would otherwise charge the full
 rate in every project on the machine, including every project that will never have a bank.
@@ -238,7 +238,7 @@ Wiring it into a project — `<project>/.mcp.json`:
 }
 ```
 
-Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.2.0` — so the server does not
+Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.2.1` — so the server does not
 change shape underneath a project you are not looking at.
 
 The package is scoped because npm's similarity check will not accept `mcp-memorybank` unscoped: it
@@ -274,20 +274,36 @@ itself how much of a surface a project gets:
 |---|---|---|
 | has a bank | everything | ~6,600 tokens |
 | has no bank | `bank_init`, and nothing else | ~450 tokens |
-| has a `.memorybank-off` file beside it | nothing at all | ~25 tokens |
+| is named by `--off`, or has a `.memorybank-off` file beside it | nothing at all | ~25 tokens |
 
 The middle row is the one that makes a global install reasonable: a project that has never had a
 bank pays about 7% of the full surface, and what it is offered — `bank_init` — is the only call
 that would have made sense there anyway. Nothing needs configuring for this; it is what the server
 does when the root holds no documents.
 
-**`.memorybank-off`** is the explicit opt-out, and it goes in the project directory, next to the
-bank rather than inside it: keeping the server out is the project's decision, not the bank's. An
-empty file is enough.
+There are two ways to say "not here", and they differ in who owns the decision.
+
+**`--off <path>` belongs to the machine.** Repeatable, and one path covers everything beneath it:
+
+```bash
+claude mcp add --scope user memorybank -- npx -y @maxweb4u/mcp-memorybank \
+  --root ./memory_bank --off /path/to/a/repo/you/do/not/govern
+```
+
+Nothing is written into the project it names — the path lives in the client's own config — so there
+is no file to appear in that repository's git status and nothing for a colleague to find. That is
+what makes it the right shape for a commercial repository someone else's team works in, and for a
+project holding several banks at different depths: one path covers them all.
+
+**`.memorybank-off` belongs to the project.** An empty file in the project directory, next to the
+bank rather than inside it — keeping the server out is the project's decision, not the bank's:
 
 ```bash
 touch .memorybank-off
 ```
+
+It travels with the repository, which is the point when the project itself means to say no, and the
+reason not to reach for it when you would rather nobody knew.
 
 The surface is decided once, when the session starts. The exception is `bank_init`: seed a bank in a
 project that had none and the rest of the tools appear immediately, without restarting the session.

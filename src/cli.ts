@@ -40,13 +40,15 @@ interface Args {
   init?: string
   materializeFlows?: boolean
   force: boolean
+  off: string[]
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { stats: false, validate: false, summary: false, inbox: false, dryRun: false, listInbox: false, force: false }
+  const args: Args = { stats: false, validate: false, summary: false, inbox: false, dryRun: false, listInbox: false, force: false, off: [] }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--root') args.root = argv[++i]
+    else if (a === '--off') args.off.push(argv[++i] ?? '')
     else if (a === '--stats') args.stats = true
     else if (a === '--route') args.route = argv[++i]
     else if (a === '--read') args.read = argv[++i]
@@ -118,7 +120,7 @@ function printStats(bank: Bank, ms: number): void {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   if (!args.root) {
-    console.error('usage: mcp-memorybank --root <path-to-memory_bank> [--stats | --route "question" [--limit N] | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" [--limit N] | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox | --init "Project Name" [--force] [--dry-run] | --materialize-flows [--force]]')
+    console.error('usage: mcp-memorybank --root <path-to-memory_bank> [--stats | --route "question" [--limit N] | --read <path> [--section <name>] | --validate [--scope <dir>] [--rule <name>] [--summary] | --graph <path> [--direction up|down|both] [--depth N] | --search "query" [--limit N] | --changed <iso-date|git-ref> | --create <path> --kind <k> --title <t> --purpose <p> [--derived a,b] [--canonical k1,k2] [--inbox] [--dry-run] | --promote <_inbox/x.md> --to <path> [--kind k] [--derived a,b] [--dry-run] | --list-inbox | --init "Project Name" [--force] [--dry-run] | --materialize-flows [--force]]\n       --off <path> (repeatable) keeps the MCP server out of that directory and everything under it')
     process.exit(2)
   }
 
@@ -290,7 +292,7 @@ async function main(): Promise<void> {
     return
   }
 
-  await startServer(bank)
+  await startServer(bank, args.off)
 }
 
 main().catch((err) => {

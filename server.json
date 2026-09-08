@@ -6,12 +6,12 @@
     "url": "https://github.com/maxweb4u/mcp-memorybank",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@maxweb4u/mcp-memorybank",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "transport": {
         "type": "stdio"
       },
@@ -23,6 +23,14 @@
           "isRequired": true,
           "format": "filepath",
           "valueHint": "./memory_bank"
+        },
+        {
+          "type": "named",
+          "name": "--off",
+          "description": "A directory the server must stay out of, itself and everything beneath it. Repeatable. Lives in the client config, so nothing is written into the project it names.",
+          "isRequired": false,
+          "format": "filepath",
+          "isRepeated": true
         }
       ]
     }
