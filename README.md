@@ -14,6 +14,38 @@ what a seeded bank is made of and where it strains — [architecture.md](archite
 Everything in the plan is done: **E0** index, **E1** reads, **E2** validation, **E3** graph,
 **E4** search and delta, **E5** writes.
 
+## What it is measurably good at, and what it is not
+
+Counted across six banks in real use, by parsing the sessions rather than by impression:
+
+```
+writing into the bank, through the server     985 calls
+reading the bank, through the server          187 calls
+reading the bank, around the server          1755 calls  (cat, grep, Read)
+bank_route specifically                        33 calls
+```
+
+**The writing half works.** `bank_create`, `bank_edit` and `bank_update_section` are used in every
+bank, with or without any instruction to do so, because writing a governed document by hand is
+harder than calling the tool: it would have to reproduce the frontmatter, resolve the
+`derived_from`, and register itself in a section index, and it would fail validation if it got any
+of that wrong. Ninety percent of all server calls are writes.
+
+**The reading half is mostly bypassed.** Nine times out of ten an agent opens the bank with `cat`
+and `grep` instead of asking `bank_route` which documents matter. This is not a claim that routing
+answers badly — nobody has measured that. It is a claim that it does not get asked, because reaching
+for the shell is what a model does in every repository and nothing here outweighs the habit.
+
+Two things follow, and neither is comfortable. Routing is the feature this README leads with and the
+one the token arithmetic below is built on, and it is the least used. Editing existing documents was
+written into the specification as something the server would *not* do — see §8 — and it turned out
+to be the half that carries the project.
+
+The one lever with evidence behind it is the paragraph under
+[Telling the agent to use it](#telling-the-agent-to-use-it): the four banks that carry it route
+eight times more often than the two that do not, 32% of reads against 4%. That is a correlation
+across six projects, and it is being tested properly — see A-06 in [backlog.md](backlog.md).
+
 ## How it works
 
 There is no database, no daemon and no configuration. A directory of markdown files is the entire
@@ -238,7 +270,7 @@ Wiring it into a project — `<project>/.mcp.json`:
 }
 ```
 
-Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.2.1` — so the server does not
+Pin the version once you rely on it — `@maxweb4u/mcp-memorybank@0.2.2` — so the server does not
 change shape underneath a project you are not looking at.
 
 The package is scoped because npm's similarity check will not accept `mcp-memorybank` unscoped: it
@@ -307,6 +339,49 @@ reason not to reach for it when you would rather nobody knew.
 
 The surface is decided once, when the session starts. The exception is `bank_init`: seed a bank in a
 project that had none and the rest of the tools appear immediately, without restarting the session.
+
+### Installing the command, wiring per project
+
+The third form, and the one to prefer when several people or machines share the repositories.
+Install once:
+
+```bash
+npm i -g @maxweb4u/mcp-memorybank
+```
+
+Then each project that wants the server carries a six-line `.mcp.json` naming the command rather
+than a path:
+
+```json
+{
+  "mcpServers": {
+    "memorybank": {
+      "command": "mcp-memorybank",
+      "args": ["--root", "./memory_bank"]
+    }
+  }
+}
+```
+
+This is the same file as at the top of this section with `npx -y @maxweb4u/mcp-memorybank` replaced
+by the installed command. What that buys:
+
+| | per project, via `npx` | user-scoped, everywhere | installed command, per project |
+|---|---|---|---|
+| a new project with a bank | one file | works by itself | one file |
+| a project with no bank | ~450 tokens | ~450 tokens | **nothing at all** |
+| a repository to stay out of | `.memorybank-off` | `--off <path>` | **add no file** |
+| start-up cost | ~0.6 s of `npx` | ~0.6 s of `npx` | **~0.1 s** |
+| an absolute path in git | no | no | no |
+| works on a colleague's machine | yes | no | yes, after `npm i -g` |
+| version | pinned in the file | pinned in the file | whatever is installed |
+
+The third column is the only one where a project that will never have a bank costs nothing, and
+where staying out of a repository needs no configuration anywhere — you simply do not add the file.
+It pays for that with a manual step per project, and with the version being whatever `npm i -g` last
+put there rather than a number written down.
+
+The hook wants the same install, for a different reason — see [hooks/README.md](hooks/README.md).
 
 ### From a clone
 

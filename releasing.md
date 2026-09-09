@@ -148,8 +148,13 @@ The README pin is the opposite case and moves early, for the same reason: nothin
   reintroduce it.
 - **npm's similarity check ignores punctuation.** The unscoped name is unavailable for good; the
   package is scoped and the `bin` is not.
-- **`npm publish` without `--access public` fails as a 404.** A scoped package defaults to
-  restricted, restricted needs a paid account, and npm reports that as
-  `404 Not Found - PUT .../@maxweb4u%2fmcp-memorybank`, which reads like the package does not
-  exist. The tell is one word in the line above it: `default access` where a good run says
-  `public access`.
+- **A 404 from `npm publish` means the login expired.** npm answers a write it will not authorise
+  with `404 Not Found - PUT .../@maxweb4u%2fmcp-memorybank`, which reads as if the package did not
+  exist. It does — the read side proves it, `npm view` still works. Browser auth does not last the
+  day; `npm whoami` answers `401 Unauthorized` once it has, and that is the check to run first,
+  because the publish output says nothing about it. `npm login` fixes it.
+
+  On 0.2.1 this cost two attempts, because the first failure also happened to be missing
+  `--access public` and that looked like the cause. It was not: the flag matters only on a
+  package's **first** publish, when a scoped package would otherwise default to restricted. The
+  publish that succeeded was a plain `npm publish` after logging in.

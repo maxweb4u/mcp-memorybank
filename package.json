@@ -1,13 +1,14 @@
 {
   "name": "@maxweb4u/mcp-memorybank",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "mcpName": "io.github.maxweb4u/memorybank",
   "description": "Seeds, governs and navigates a memory_bank knowledge base: gated writes, routing without reading, drift against the code",
   "license": "MIT",
   "author": "Max Gornostayev",
   "type": "module",
   "bin": {
-    "mcp-memorybank": "./dist/cli.js"
+    "mcp-memorybank": "./dist/cli.js",
+    "mcp-memorybank-hook": "./hooks/capture-to-inbox.sh"
   },
   "engines": {
     "node": ">=22"

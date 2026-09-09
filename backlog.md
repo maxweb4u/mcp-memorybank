@@ -117,6 +117,46 @@ nothing to record, and the nine decisions taken an hour later were never asked a
 carries a fingerprint of the working tree and the time of the last ask, so the question returns once
 the tree has moved and a cooldown has passed.
 
+### A-06. Does the `CLAUDE.md` paragraph move *reading*, or only writing? — **running, 9 September 2026**
+
+The two-arm experiment recorded under A-04 measured writes: with the paragraph, zero shell writes
+across two sessions; without it, the same agent that called `bank_edit` thirty times still reached
+for python six. Reading was never measured that way, and a count across six banks says it is the
+weaker half by a long way.
+
+Counted properly — parsing `tool_use` blocks rather than grepping transcripts, and with file moves
+and one migration session excluded so that mechanical `mv`/`cp` work does not inflate the shell side:
+
+```
+                  bank_route   reads via server   reads via shell   server's share
+with the paragraph        30                129               277              32%
+without it                 3                 58              1371               4%
+```
+
+The four banks with the paragraph are `idelo`, `focusreminder`, `maxesoft.com`, `ebook_parser`; the
+two without were `tasman/research` and `readtolearn`. Robust to dropping the largest session:
+`readtolearn` minus its migration is 1 server read against 68 through the shell — 1%.
+
+This is a correlation across six projects with different work in them, not a controlled result. The
+projects that carry the paragraph are also the ones whose banks were built deliberately, and that
+alone could explain it.
+
+**So it is now an experiment with a prediction.** The paragraph was added to both bare projects on
+9 September. Re-run the same count in a week. The prediction is that the share of bank reads going
+through the server rises from **4% to roughly 30%** in those two projects.
+
+- **If it rises:** the paragraph causes it, and it stops being advice. It moves in the README from a
+  section after the wiring instructions to a required step of installation, because without it the
+  server looks broken to a new user — which is exactly what happened in `readtolearn`.
+- **If it does not:** the driver is the kind of work, not the instruction, and the README needs the
+  opposite correction: say plainly that the server earns its place on writing, and that routing is
+  used rarely even when it is available and documented.
+
+Either answer is worth more than the guess. What must not happen is quietly assuming the first one.
+
+**Done when:** the count is re-run on the same six banks with the same script and the outcome is
+recorded here.
+
 ## B. Server code — all of it optional
 
 Nothing here blocks use.

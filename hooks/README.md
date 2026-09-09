@@ -72,7 +72,13 @@ while you are not working in the project — which is the point, not a gap.
 
 ## Installation
 
-In a project that has a bank, `<project>/.claude/settings.json`:
+Install the package once, so the hook has a name the shell can call:
+
+```bash
+npm i -g @maxweb4u/mcp-memorybank
+```
+
+Then, in a project that has a bank, `<project>/.claude/settings.json`:
 
 ```json
 {
@@ -82,7 +88,7 @@ In a project that has a bank, `<project>/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "/absolute/path/memorybank/hooks/capture-to-inbox.sh"
+            "command": "mcp-memorybank-hook"
           }
         ]
       }
@@ -90,6 +96,15 @@ In a project that has a bank, `<project>/.claude/settings.json`:
   }
 }
 ```
+
+The global install is what makes that one word work. It is not the same thing as wiring the MCP
+server: the server is started by the client from its own config, which can run `npx` and fetch the
+package on demand, while the hook is run by an ordinary shell that knows nothing about either. A
+shell needs a real command on the PATH, or an absolute path to the script.
+
+An absolute path still works — `.../memorybank/hooks/capture-to-inbox.sh` — and is the right choice
+when running from a clone. In a committed `settings.json` it is the wrong one: it ties the
+repository to one checkout on one machine, and it is a local path in someone else's git history.
 
 The inner `hooks` array is not decoration: an entry written flat, as
 `"Stop": [{ "type": "command", ... }]`, does not register and reports no error. `Stop` takes no
