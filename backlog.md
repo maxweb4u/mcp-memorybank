@@ -117,7 +117,7 @@ nothing to record, and the nine decisions taken an hour later were never asked a
 carries a fingerprint of the working tree and the time of the last ask, so the question returns once
 the tree has moved and a cooldown has passed.
 
-### A-06. Does the `CLAUDE.md` paragraph move *reading*, or only writing? — **running, 9 September 2026**
+### A-06. Does the `CLAUDE.md` paragraph move *reading*, or only writing? — **first re-run 14 September 2026, closes 16 September**
 
 The two-arm experiment recorded under A-04 measured writes: with the paragraph, zero shell writes
 across two sessions; without it, the same agent that called `bank_edit` thirty times still reached
@@ -156,6 +156,66 @@ Either answer is worth more than the guess. What must not happen is quietly assu
 
 **Done when:** the count is re-run on the same six banks with the same script and the outcome is
 recorded here.
+
+**First re-run, 14 September 2026 — five days, not seven.** Same script, same cut: every `tool_use`
+after 11:45 UTC on 9 September, when the paragraph went in. Two things about how to read it, stated
+so that the run on the 16th reads it the same way:
+
+- The script's "read through the shell" is every Bash call whose text mentions `memory_bank`, minus
+  moves — and that includes `git add memory_bank && git commit` and `sed -i`. The last column drops
+  git and writes. It shifts the level, not the direction.
+- The baseline does not reproduce exactly. The group with the paragraph gives 30 / 129 / 277 again,
+  to the call. The group without gives the same 3 and 58 on the server side, but 1274 shell reads
+  against the 1371 in the table above, with 60 moves before the cut — so the gap is not the moves,
+  and I could not reconstruct it. The share is 4% either way.
+
+```
+                    bank_route   reads via server   reads via shell   share   share, no git or writes
+without  before              3                 58              1274      4%        6%
+         after               2                 28                81     26%       32%
+with     before             30                129               277     32%       51%
+         after               2                 63                71     47%       77%
+```
+
+Per project after the cut, last column: `tasman/research` 36%, `readtolearn` 28%, `idelo` 71%,
+`focusreminder` 80%. `maxesoft.com` and `ebook_parser` had no sessions in the window, so the six
+banks are four.
+
+**What it says.** The prediction held: 4% to 26%, against roughly 30% forecast. But the control moved
+too, 32% to 47%, so the rule written above — "if it rises, the paragraph causes it" — does not apply
+as written. The paragraph closed part of the gap and not all of it: the projects without it went from
+an eighth of the other group's share to about half. And routing did not move at all — four
+`bank_route` calls in five days across four banks. The growth is `bank_read` and `bank_search`. The
+shell reads that remain are, on a sample, mostly line-addressed — `grep -n` into one file,
+`sed -n '155,200p'` — which nothing in the server offers.
+
+Weak points: one session per project, each running over several days; every session after the cut is
+ordinary work, while the baseline mixes in a migration and test sessions.
+
+**Still open:** the run on 16 September over the full week, and the README decision after it. Neither
+branch above is taken yet.
+
+### A-07. What five days of sessions showed about the Stop hook — **open**
+
+Five asks across the three projects that have the hook, and two notes came of them. Of eight
+`bank_create` calls into `_inbox/` in the same window, six were made with no ask at all.
+
+- **Three of the five asks were wasted, and this repository caused them.** All three came on the
+  first, orientation turn of the sessions started on 9 September, 13:29–13:32 UTC, and all three
+  answers were "nothing durable". The trees were dirty because the move to per-project `.mcp.json`
+  and the new `CLAUDE.md` paragraph had left untracked files in each project; the agents committed
+  both within the hour. It is the failure `hooks/README.md` describes — asking at the least informed
+  moment — produced by a change made from outside the session.
+- **`focusreminder`: 23 stops, one ask, no notes**, across 350 server writes. Likely cause, not
+  verified: the agent commits at the end of a turn — twenty commits in the window — so the tree is
+  clean whenever the hook looks. A workflow that commits every turn is never asked.
+- **`readtolearn` has no hook where its sessions run.** It is configured in
+  `readtolearn/frontend/.claude/`, and the sessions start at the project root: 154 stops, no asks.
+
+**Done when:** the commit-per-turn cause is checked by replaying the hook's conditions at each stop of
+that session, and then either the dirty-tree condition gains a companion — commits made since the last
+ask count as work — or `hooks/README.md` says the hook does not fit that workflow. The `readtolearn`
+gap is the owner's call, not this repository's.
 
 ## B. Server code — all of it optional
 
@@ -506,6 +566,57 @@ diff in B-04, which after this is the most valuable unbuilt item in the list.
 
 Full analysis — [architecture.md](architecture.md).
 
+### B-11. Setting a frontmatter value — **done, 14 September 2026**
+
+Measured over the same five days as A-06, in four banks, against 603 writes through the server:
+eleven writes into a bank went around it, and eight of them were frontmatter edits — `purpose` six
+times, `delivery_status` twice — made with `sed -i` or a python partition on `\n---\n`. The other
+three are B-12 and one replacement of a phrase in three files. One agent gave the reason in as many
+words: the phrase is in the frontmatter, so `bank_edit` cannot change it. It could not. `bank_edit`
+searches the body by construction and `bank_set_status` owns one key, and `purpose` is what
+`bank_route` ranks on — so the field routing depends on was the one only a shell could correct.
+
+**Done.** `bank_set_field { path, field, value, dryRun }` sets one scalar value. The block is edited
+in place: the key's lines, continuation lines of a folded value included, become one line, and every
+other byte stays. The value keeps the quoting its line used and is quoted further until YAML reads it
+back unchanged — a purpose with ": " in it, a date that has to stay a string — or refused if nothing
+does; a document that parsed before must still parse. `delivery_status` and `decision_status` are
+checked against `dna/`. A changed `purpose` or `title` is carried into a section index entry that
+repeated it verbatim, which is what `bank_create` writes; a hand-written summary is left alone. A
+title change renames the H1 when the H1 was the old title.
+
+Refused, each with where to go instead: `status` (`bank_set_status`, which runs the gates), `doc_kind`
+and `doc_function` (changing them is re-creating the document), and anything holding a list —
+`derived_from`, `canonical_for`, `must_not_define`, `anchors`, or any other key. Nothing in the five
+days edited a list field, so there is no measured shape for that yet.
+
+Tests: `test/set-field.test.ts`, nineteen. Checked end to end through a stdio client on a scratch
+bank by replaying the `idelo` edit: purpose and index entry changed, status and an undeclared
+`delivery_status` refused, `bank_validate` clean.
+
+The `CLAUDE.md` paragraph in the README does not name the new tool, on purpose. A-06 is measuring that
+paragraph, and it already tells the agent to look at what the `bank_` family holds.
+
+### B-12. Whole-document rewrites still go through the shell — **open, needs a decision**
+
+In `tasman/research` on 13 September, eight use-case documents that had existed since 1 September were
+read through `bank_read` and then rewritten in two `cat >` calls, with the server's other write tools
+in use in the same hour. §8 of the specification says nothing rewrites a document wholesale, and B-01
+kept that boundary; the agent kept it too, by stepping around it. `bank_validate` ran afterwards, so
+the bank stayed valid. What was lost is that the server never saw the write.
+
+Two ways out, and they are not the same decision: a tool that keeps the frontmatter and the index
+entry and replaces the whole body, which moves the boundary; or a line in the paragraph saying a full
+rewrite is done section by section, which keeps it. One case in one bank is not enough to choose.
+Revisit when a second bank shows it.
+
+### B-13. A note that left `_inbox/` answers "Not a document" at its old path — **open, small**
+
+In `idelo`, twice, an agent addressed a note by its quarantine path after `bank_promote` had moved it,
+and got `Not a document of this bank` — true, and no help. It found the new place with
+`git log --follow`. `bank_promote` knows where a note went and nothing remembers it. A record of
+promotions would let the refusal say where to look.
+
 ## C. Publishing
 
 Target — mcpservers.org.
@@ -581,6 +692,15 @@ against what this build actually produces. It needs nothing but a temp directory
 That change paid for itself immediately — see the `bank_changed` defect recorded under E4 in
 [implementation-plan.md](implementation-plan.md), which no test against the real banks could have
 found.
+
+### C-04. The token table assumes a client that loads every definition — **open**
+
+*What it costs in tokens* in the README says the fixed half is paid on every request because the
+definitions live in the context. In Claude Code they do not, at first: in all five sessions analysed
+on 14 September, the fifteen `memorybank` tools arrived deferred — names only — and each session
+loaded schemas through `ToolSearch` one to five times. What Claude Code actually pays per request has
+not been measured. The table is right for a client that lists every definition up front; measure the
+deferred case, then say in the README which figure belongs to which client.
 
 ## D. Revisited "deliberately not doing this" decisions
 

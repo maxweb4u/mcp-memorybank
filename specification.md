@@ -342,9 +342,9 @@ Each of these was a measurement, not a change of mind. The record is in
 
 | Designed here | Built | Why |
 |---|---|---|
-| eight tools | fifteen | seven capabilities the field test found missing, each after real work hit the gap |
+| eight tools | sixteen | eight capabilities the field test and later sessions found missing, each after real work hit the gap |
 | `bank_owner` | never built | `canonical_for` sits at 29% with one conflict; ownership rides inside routing and validation |
-| creation only, no editing | `bank_edit`, `bank_update_section`, `bank_set_status` | most writes are smaller than a document, and every one of them was going through a shell |
+| creation only, no editing | `bank_edit`, `bank_update_section`, `bank_set_status`, `bank_set_field` | most writes are smaller than a document, and every one of them was going through a shell |
 | stops at the bank root | one hop for `bank_graph` | a monorepo puts real decisions on the other side of the wall |
 | — | `bank_drift` | validation cannot see the failure that matters most: what was written going stale |
 | layers fixed in the server | declared in `dna/` | it was the one rule the server imposed rather than read, and it failed silently |

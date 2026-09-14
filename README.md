@@ -202,12 +202,12 @@ definitions live in the context:
 | | characters | ~tokens |
 |---|---|---|
 | server instructions | 343 | 98 |
-| 15 tool definitions | 20,473 | 5,849 |
-| 5 prompts | 1,357 | 388 |
-| 4 resources | 913 | 261 |
-| **total, per request** | **23,086** | **~6,600** |
+| 16 tool definitions | 21,790 | 6,226 |
+| 5 prompts | 1,346 | 385 |
+| 4 resources | 908 | 259 |
+| **total, per request** | **24,387** | **~7,000** |
 
-`bank_create` is the most expensive definition at ~715 tokens — seven parameters and a description
+`bank_create` is the most expensive definition at ~710 tokens — seven parameters and a description
 that has to explain the gate. `bank_changed` is the cheapest at ~183.
 
 That table is what a project **with a bank** pays. A project that has none is offered `bank_init`
@@ -232,7 +232,7 @@ reasoning rather than any prose. What to read afterwards is then a decision made
 documents and you get what fits plus a list of what the budget did not reach, broken down by
 section, so a single call cannot flood the context.
 
-**Where the break-even sits.** The ~6,600 is repaid the first time the server prevents one
+**Where the break-even sits.** The ~7,000 is repaid the first time the server prevents one
 unnecessary read, and that happens immediately on any bank large enough to matter. Measured across
 four banks of the same lineage:
 
@@ -247,7 +247,7 @@ At the top of that range the corpus is two full context windows and reading it i
 any price, while a routed answer stays in the low hundreds of tokens.
 
 The honest conclusion is that **on a small bank the server loses**. While the corpus still fits in a
-context window, `cat` is cheaper than a 6,600-token standing charge, and the field test measured
+context window, `cat` is cheaper than a 7,000-token standing charge, and the field test measured
 exactly that: on a bank small enough to read whole, routing competes with "already in context" and
 loses. The server earns its cost on corpora that have outgrown being read.
 
@@ -304,7 +304,7 @@ itself how much of a surface a project gets:
 
 | The project | What it sees | Cost per request |
 |---|---|---|
-| has a bank | everything | ~6,600 tokens |
+| has a bank | everything | ~7,000 tokens |
 | has no bank | `bank_init`, and nothing else | ~450 tokens |
 | is named by `--off`, or has a `.memorybank-off` file beside it | nothing at all | ~25 tokens |
 
@@ -458,8 +458,8 @@ choice consistent. Neither substitutes for the other — see [field-test.md](fie
 ## Debugging from the terminal
 
 The CLI is a read-mostly subset for looking at a bank without an agent in the loop, not a mirror of
-the tool surface: `bank_drift`, `bank_edit`, `bank_update_section`, `bank_set_status` and
-`bank_discard` are MCP-only. Installed from npm the command is `mcp-memorybank`; from a clone it is
+the tool surface: `bank_drift`, `bank_edit`, `bank_update_section`, `bank_set_status`,
+`bank_set_field` and `bank_discard` are MCP-only. Installed from npm the command is `mcp-memorybank`; from a clone it is
 `node dist/cli.js`.
 
 ```bash
@@ -495,6 +495,7 @@ mcp-memorybank --root <bank> --promote _inbox/note.md --to engineering/thing.md 
 | `bank_edit` | replaces one exact fragment of a body — a table row, a step, a heading; refuses an ambiguous match |
 | `bank_update_section` | writes the body of one named section of an existing document, leaving everything else alone |
 | `bank_set_status` | moves a document to another lifecycle status, running the gates that guard activation |
+| `bank_set_field` | changes one frontmatter value — `purpose`, `delivery_status`, `title` — in the quoting it had, carrying `purpose` and `title` into the index entry |
 | `bank_promote` | moves a note out of `_inbox/` into a canonical layer, registering it and deleting the source |
 | `bank_discard` | drops a quarantined note, on the record — `_inbox/` only, and a reason is required |
 
@@ -591,6 +592,16 @@ own the key — `bank_create` refuses the successor with "already owned by", nam
 reads any more. Archiving an owner is therefore refused unless `releaseCanonical` says so, and the
 keys are dropped as part of the same write. Measured, again: a session archived a document and
 stripped the block with a python regex, because that was the only way to do it at all.
+
+`bank_set_field` covers the rest of the frontmatter, and exists for the same reason. Over five days
+of ordinary work in four banks, eight of the eleven writes that went around the server were
+frontmatter edits — `purpose` six times, `delivery_status` twice — because `bank_edit` cannot reach
+the block and `bank_set_status` owns one key. `purpose` is what `bank_route` ranks on, so the field
+routing depends on was the one only a shell could correct. The tool sets one scalar value in place
+and leaves every other byte alone, keeps the quoting the line used and quotes further until YAML reads
+the value back unchanged, checks `delivery_status` and `decision_status` against `dna/`, and carries
+a changed `purpose` or `title` into the index entry that repeated it. It refuses what governance
+lives in: `status`, which has its own gates, `doc_kind` and `doc_function`, and every list field.
 
 `bank_create` takes the template from the bank's own `flows/templates/` when it has one, and from
 the set the server ships when it does not. Templates are

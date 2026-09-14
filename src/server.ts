@@ -13,7 +13,7 @@ import { changed } from './changed.js'
 import { drift } from './drift.js'
 import { create, discard, inbox, promote } from './create.js'
 import { init, materializeFlows } from './init.js'
-import { edit, setStatus, updateSection } from './update.js'
+import { edit, setField, setStatus, updateSection } from './update.js'
 import { type Surface, surfaceFor } from './surface.js'
 
 const LAYERS = ['dna', 'knowledge', 'decision', 'delivery', 'flow', 'other'] as const
@@ -247,7 +247,8 @@ export async function startServer(bank: Bank, off: readonly string[] = []): Prom
         'edits; use bank_update_section when writing a section from nothing. The match must be ' +
         'unique: zero or several occurrences are refused with the count rather than guessed at, ' +
         'and section narrows the search when the same words appear twice. Renaming a heading is ' +
-        'an ordinary edit here. The frontmatter is out of reach: the search runs on the body.',
+        'an ordinary edit here. The frontmatter is out of reach: the search runs on the body. To ' +
+        'change a frontmatter value such as purpose, use bank_set_field.',
       inputSchema: {
         path: z.string().describe('Bank-relative path of an existing document'),
         find: z.string().min(1).describe('Exact text to replace, whitespace included'),
@@ -339,6 +340,37 @@ export async function startServer(bank: Bank, off: readonly string[] = []): Prom
       await bank.refresh()
       try {
         return json(await setStatus(bank, input))
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  ))
+
+  keep('bank_set_field', server.registerTool(
+    'bank_set_field',
+    {
+      title: "Change one value in a document's frontmatter",
+      description:
+        'Sets one scalar frontmatter field of an existing document — purpose when what a document ' +
+        'is for has changed, delivery_status or decision_status as work moves, title, or a field ' +
+        'the bank added for itself. bank_edit cannot reach the frontmatter, so this is the way to ' +
+        'change it without sed or python. Every other line of the block is kept byte for byte, and ' +
+        'the value is written in the quoting the line already used. A changed purpose or title is ' +
+        'carried into the section index entry that repeated it; enum fields are checked against ' +
+        'dna/. Refused: status (bank_set_status runs its gates), doc_kind and doc_function, and ' +
+        'list fields such as derived_from and canonical_for.',
+      inputSchema: {
+        path: z.string().describe('Bank-relative path of an existing document'),
+        field: z.string().min(1).describe('Frontmatter key, e.g. "purpose" or "delivery_status"'),
+        value: z.string().describe('The new value, on one line'),
+        dryRun: z.boolean().optional().describe('Report what would change without writing'),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true },
+    },
+    async (input) => {
+      await bank.refresh()
+      try {
+        return json(await setField(bank, input))
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err))
       }

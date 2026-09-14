@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises'
 import { checkGovernance, contentFrom } from './create.js'
+import { extractLinks, splitFrontmatter } from './parse.js'
 import type { Bank } from './bank.js'
+import type { Contract } from './types.js'
 
 export interface UpdateSectionInput {
   /** Bank-relative path of an existing document. */
@@ -353,4 +355,254 @@ function stripCanonical(lines: string[]): boolean {
   }
   lines.splice(at, end - at)
   return true
+}
+
+export interface SetFieldInput {
+  /** Bank-relative path of an existing document. */
+  path: string
+  /** Frontmatter key whose value is being set. */
+  field: string
+  /** The new value, on one line. */
+  value: string
+  dryRun?: boolean
+}
+
+export interface SetFieldResult {
+  path: string
+  field: string
+  /** The value before, or null when the key was not there. */
+  from: string | null
+  to: string
+  changed: boolean
+  dryRun: boolean
+  /** The frontmatter line as it is written. */
+  line: string
+  /** Index documents whose entry for this document repeated the old value, and now repeat the new one. */
+  indexes: string[]
+  /** True when a title change also renamed the H1, which had carried the old title. */
+  heading?: boolean
+}
+
+const FIELD_NAME = /^[A-Za-z_][\w-]*$/
+
+/** Fields this tool refuses, and where each one goes instead. */
+const ELSEWHERE: Record<string, string> = {
+  status: 'status is where the gates are. Use bank_set_status, which runs them.',
+  doc_kind:
+    'doc_kind decides the template, the section index and the gates a document was created under. ' +
+    'Changing it is re-creating the document, not editing a value.',
+  doc_function:
+    'doc_function says whether a file is a document or a template. Changing it is re-creating the ' +
+    'document, not editing a value.',
+}
+
+/** List-valued fields that carry governance — dependencies, ownership, exclusions, code anchors. */
+const LISTS = new Set(['derived_from', 'canonical_for', 'must_not_define', 'anchors'])
+
+const ENUMS: Record<string, (c: Contract) => Set<string>> = {
+  delivery_status: (c) => c.deliveryStatuses,
+  decision_status: (c) => c.decisionStatuses,
+}
+
+type Quoting = 'plain' | 'single' | 'double'
+
+/** A parsed YAML value in the form it was written, for reporting and comparison. */
+function scalarText(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  return String(value)
+}
+
+/**
+ * Picks the first quoting that YAML reads back as exactly what was asked for, starting from the one
+ * the line already used. Plain is not always safe: `2026-09-14`, `true` and `1.10` are not strings
+ * to a YAML parser, and a purpose containing ": " does not parse at all — which is how 22 documents
+ * across the real banks ended up with frontmatter only the lenient reader can recover.
+ *
+ * A value that was not a string to begin with — a date, a number — may stay unquoted as long as it
+ * reads back as the same kind of thing.
+ */
+function writeLine(field: string, value: string, quoting: Quoting, current: unknown): string {
+  const forms: Record<Quoting, string> = {
+    plain: value,
+    single: `'${value.replace(/'/g, "''")}'`,
+    double: JSON.stringify(value),
+  }
+  const order: Quoting[] = quoting === 'single' ? ['single', 'double'] : quoting === 'double' ? ['double'] : ['plain', 'double']
+  for (const q of order) {
+    const line = `${field}: ${forms[q]}`
+    const { data, error } = splitFrontmatter(`---\n${line}\n---\n`)
+    if (error) continue
+    const back = data[field]
+    if (typeof back === 'string' && back === value) return line
+    const typed = current !== undefined && typeof current !== 'string'
+    if (q === 'plain' && typed && typeof back === typeof current && scalarText(back) === value) return line
+  }
+  reject(`${JSON.stringify(value)} cannot be written as a frontmatter value that reads back unchanged.`)
+}
+
+/**
+ * Sets one scalar value in the frontmatter of an existing document.
+ *
+ * Measured over five days of working sessions in four banks: of eleven writes into a bank that went
+ * around the server, eight were frontmatter edits — `purpose` six times, `delivery_status` twice —
+ * made with `sed -i` or a python partition on `\n---\n`. `bank_edit` cannot reach the frontmatter by
+ * construction, and `bank_set_status` changes one key only, so a document whose purpose had drifted
+ * had no governed way to say so. An agent wrote it down in as many words: the phrase is in the
+ * frontmatter, so `bank_edit` cannot change it. `purpose` is also the field `bank_route` ranks on,
+ * which made it the worst one to leave to a shell.
+ *
+ * The block is edited in place, never re-serialised: one key's lines are replaced and every other
+ * byte stays as written. A value that YAML would read differently is quoted until it reads back
+ * unchanged, and the write is refused if nothing does.
+ *
+ * Two things around the value move with it. A section index entry written by `bank_create` repeats
+ * the purpose and the title verbatim, so an entry that still carries the old one gets the new one —
+ * a hand-written summary that does not repeat it is left alone. And a title change renames the H1
+ * when the H1 was the old title.
+ *
+ * What it will not touch is where governance lives: `status` has its own tool with its own gates,
+ * `doc_kind` and `doc_function` are what the document was created as, and list fields such as
+ * `derived_from` and `canonical_for` are not one value.
+ */
+export async function setField(bank: Bank, input: SetFieldInput): Promise<SetFieldResult> {
+  const doc = bank.get(input.path)
+  if (!doc) reject(`Not a document of this bank: ${input.path}`)
+  if (doc.docFunction === 'template') {
+    reject(`${doc.path} is a template. Templates are edited by hand, not through the server.`)
+  }
+
+  const field = input.field.trim()
+  if (!FIELD_NAME.test(field)) reject(`"${input.field}" is not a frontmatter key.`)
+  const elsewhere = Object.hasOwn(ELSEWHERE, field) ? ELSEWHERE[field] : undefined
+  if (elsewhere) reject(elsewhere)
+  if (LISTS.has(field)) {
+    reject(
+      `${field} is a list, and it carries governance. This tool sets one scalar value; nothing in the ` +
+        `server edits ${field} yet, so change it by hand and run bank_validate.` +
+        (field === 'canonical_for' ? ' Archiving gives the keys up: bank_set_status with releaseCanonical.' : ''),
+    )
+  }
+
+  const to = input.value.trim()
+  if (!to) reject('`value` is empty. To remove a field, edit the document by hand and say so.')
+  if (/[\r\n]/.test(to)) reject('`value` must fit on one line: frontmatter values here are single scalars.')
+
+  const allowed = ENUMS[field]?.(bank.contract)
+  if (bank.contract.present && allowed && allowed.size > 0 && !allowed.has(to)) {
+    reject(`"${to}" is not a ${field} this bank declares. Allowed: ${[...allowed].join(' | ')} (from dna/).`)
+  }
+
+  const raw = await fs.readFile(bank.abs(doc.path), 'utf8')
+  const { head, body } = splitRaw(raw)
+  if (!head) reject(`${doc.path} has no frontmatter, so it has no ${field} to set.`)
+
+  const current = splitFrontmatter(raw).data[field]
+  if (current !== undefined && current !== null && typeof current === 'object' && !(current instanceof Date)) {
+    reject(`${field} in ${doc.path} holds a list or a mapping, not one value. This tool sets scalars only.`)
+  }
+  const from = scalarText(current)
+
+  const lines = head.split('\n')
+  let close = lines.length - 1
+  while (close > 0 && !/^---\s*$/.test(lines[close]!)) close--
+  const at = lines.findIndex((l, i) => i > 0 && i < close && new RegExp(`^${field}:(\\s|$)`).test(l))
+
+  if (from === to && at !== -1) {
+    return { path: doc.path, field, from, to, changed: false, dryRun: Boolean(input.dryRun), line: lines[at]!, indexes: [] }
+  }
+
+  let quoting: Quoting = 'plain'
+  let end = at + 1
+  if (at !== -1) {
+    const inline = lines[at]!.slice(field.length + 1).trimStart()
+    quoting = inline.startsWith("'") ? 'single' : inline.startsWith('"') ? 'double' : 'plain'
+    // A value can run on over indented lines — a folded scalar, a long quoted string. They go with it.
+    while (end < close) {
+      if (/^[ \t]/.test(lines[end]!)) {
+        end++
+        continue
+      }
+      let k = end
+      while (k < close && lines[k]!.trim() === '') k++
+      if (k > end && k < close && /^[ \t]/.test(lines[k]!)) {
+        end = k
+        continue
+      }
+      break
+    }
+  }
+
+  const line = writeLine(field, to, quoting, current)
+  if (at === -1) lines.splice(close, 0, line)
+  else lines.splice(at, end - at, line)
+  const nextHead = lines.join('\n')
+
+  let nextBody = body
+  let heading: boolean | undefined
+  if (field === 'title' && from) {
+    const bodyLines = body.split('\n')
+    let fence = false
+    for (let i = 0; i < bodyLines.length; i++) {
+      if (/^\s*(```|~~~)/.test(bodyLines[i]!)) fence = !fence
+      if (fence) continue
+      const m = /^#\s+(.+?)\s*$/.exec(bodyLines[i]!)
+      if (!m) continue
+      if (m[1] === from) {
+        bodyLines[i] = `# ${to}`
+        heading = true
+      }
+      break
+    }
+    nextBody = bodyLines.join('\n')
+  }
+
+  const contents = `${nextHead}${nextBody}`
+  // The line was already proven to read back alone. A document that parsed before must still parse,
+  // with the value in place; one that did not is on the lenient reader either way.
+  if (!doc.parseError) {
+    const check = splitFrontmatter(contents)
+    if (check.error || scalarText(check.data[field]) !== to) {
+      reject(`Setting ${field} would leave ${doc.path} with frontmatter that does not read back. Nothing was written.`)
+    }
+  }
+
+  const indexes: string[] = []
+  const indexWrites: [string, string][] = []
+  if ((field === 'purpose' || field === 'title') && from) {
+    for (const indexPath of doc.registeredIn) {
+      const indexRaw = await fs.readFile(bank.abs(indexPath), 'utf8')
+      let touched = false
+      const indexLines = indexRaw.split('\n').map((l) => {
+        if (!extractLinks(indexPath, l).some((link) => link.to === doc.path)) return l
+        const next =
+          field === 'purpose'
+            ? l.replace(from, () => to)
+            : l.replace(`[${from}](`, () => `[${to}](`).replace(`[\`${from}\`](`, () => `[\`${to}\`](`)
+        if (next !== l) touched = true
+        return next
+      })
+      if (touched) {
+        indexes.push(indexPath)
+        indexWrites.push([indexPath, indexLines.join('\n')])
+      }
+    }
+  }
+
+  if (!input.dryRun) {
+    await fs.writeFile(bank.abs(doc.path), contents, 'utf8')
+    for (const [indexPath, indexContents] of indexWrites) await fs.writeFile(bank.abs(indexPath), indexContents, 'utf8')
+  }
+
+  return {
+    path: doc.path,
+    field,
+    from,
+    to,
+    changed: !input.dryRun,
+    dryRun: Boolean(input.dryRun),
+    line,
+    indexes,
+    ...(heading ? { heading } : {}),
+  }
 }
