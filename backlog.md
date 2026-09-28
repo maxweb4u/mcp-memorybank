@@ -617,6 +617,30 @@ and got `Not a document of this bank` — true, and no help. It found the new pl
 `git log --follow`. `bank_promote` knows where a note went and nothing remembers it. A record of
 promotions would let the refusal say where to look.
 
+### B-15. A path given from the repository root — **done, 22 September 2026**
+
+Measured over the week after 0.3.0, in two banks: three `bank_read` calls were refused as
+`Not a document of this bank` because the agent passed `memory_bank/features/FT-12/brief.md` — the
+path as it appears from the repository root, which is where the agent's shell stands. The lookup
+dropped a leading `./` and nothing else. `bank_create`, `bank_promote` and `bank_discard` normalised
+paths on their own the same way, so a create given that form would have written into a nested
+`memory_bank/memory_bank/`. None had yet: no bank on this machine holds one.
+
+**Done.** `Bank.relative()` folds the three forms agents actually use into the bank-relative one: the
+bank's own directory name in front, `./`, and an absolute path that lies inside the bank. Every
+lookup goes through it, and so do the targets of creation, promotion and discarding, which is where
+the separate normaliser used to be. The prefix is kept when it names a real place — a bank that
+holds a directory of its own name, or a document at the path as given. An absolute path outside the
+bank is still refused. Results always report the bank-relative path, so the agent sees the form to
+use next time.
+
+Tests: `test/paths.test.ts`, seven. Replayed through a stdio client on a scratch bank: the refused
+read now answers, a batch read with the prefix answers, a create lands in `adr/` with no nested
+directory.
+
+Not covered: `scope` in `bank_validate` and `bank_drift` still expects the bank-relative form. No
+session got that wrong.
+
 ## C. Publishing
 
 Target — mcpservers.org.

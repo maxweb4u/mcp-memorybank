@@ -115,10 +115,6 @@ function retitle(body: string, title: string): string {
   return `# ${title}\n\n${body}`
 }
 
-function normalise(p: string): string {
-  return p.replace(/^\.?\//, '').split(path.sep).join('/')
-}
-
 /**
  * Templates in these banks are wrappers: the document to instantiate sits inside them as two fenced
  * blocks under `## Instantiated Frontmatter` and `## Instantiated Body`. Templates without those
@@ -225,7 +221,7 @@ export async function templateSource(
  * moment something needs it, rather than standing empty in advance.
  */
 async function ensureSectionIndex(bank: Bank, targetPath: string): Promise<string | null> {
-  const section = sectionFor(normalise(targetPath))
+  const section = sectionFor(bank.relative(targetPath))
   if (!section) return null
   const indexPath = `${section.dir}/README.md`
   if (bank.get(indexPath)) return null
@@ -283,7 +279,7 @@ export function registerSection(rootRaw: string, dir: string, route: string): st
 
 /** The index that should route a new document: its own directory, then the nearest ancestor. */
 export function pickIndex(bank: Bank, targetPath: string): BankDoc | null {
-  const segments = normalise(targetPath).split('/')
+  const segments = bank.relative(targetPath).split('/')
   segments.pop()
   while (segments.length >= 0) {
     const candidate = [...segments, 'README.md'].join('/')
@@ -438,7 +434,7 @@ export async function create(bank: Bank, input: CreateInput): Promise<CreateResu
   if (!input.title.trim()) fail('`title` is required.')
   if (!input.purpose.trim()) fail('`purpose` is required: it is the signal bank_route ranks on.')
 
-  let target = normalise(input.path)
+  let target = bank.relative(input.path)
   if (input.inbox && !target.startsWith(`${INBOX}/`)) target = `${INBOX}/${path.posix.basename(target)}`
   await checkTarget(bank, target, input.path)
 
@@ -503,7 +499,7 @@ export async function create(bank: Bank, input: CreateInput): Promise<CreateResu
 
   // `pickIndex` walks up to the root index, which always exists, so it cannot answer "does this
   // section have an index of its own" — which is the question here.
-  const section = input.inbox ? undefined : sectionFor(normalise(target))
+  const section = input.inbox ? undefined : sectionFor(bank.relative(target))
   const missingIndex = section && !bank.get(`${section.dir}/README.md`) ? `${section.dir}/README.md` : null
   if (missingIndex && !input.dryRun) await ensureSectionIndex(bank, target)
 
@@ -626,12 +622,12 @@ function relinkBody(body: string, fromPath: string, toPath: string, bank: Bank):
 }
 
 export async function promote(bank: Bank, input: PromoteInput): Promise<PromoteResult> {
-  const from = normalise(input.path)
+  const from = bank.relative(input.path)
   const source = bank.get(from)
   if (!source) fail(`Not a document of this bank: ${input.path}`)
   if (source.layer !== 'inbox') fail(`Only quarantined documents can be promoted; ${from} is not in ${INBOX}/.`)
 
-  const target = normalise(input.to)
+  const target = bank.relative(input.to)
   if (target.startsWith(`${INBOX}/`)) fail('Promotion must leave the quarantine; give a destination outside _inbox/.')
   await checkTarget(bank, target, input.to)
 
@@ -734,7 +730,7 @@ export interface DiscardResult {
  * canonical documents is not something this server should learn to do.
  */
 export async function discard(bank: Bank, input: DiscardInput): Promise<DiscardResult> {
-  const from = normalise(input.path)
+  const from = bank.relative(input.path)
   const source = bank.get(from)
   if (!source) fail(`Not a document of this bank: ${input.path}`)
   if (source.layer !== 'inbox') {

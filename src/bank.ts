@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { BankDoc, Contract, IndexLink } from './types.js'
@@ -166,13 +167,40 @@ export class Bank {
     }
   }
 
+  /**
+   * The bank-relative form of a path as an agent passed it.
+   *
+   * Agents do not always address documents from the bank root. The path they see in the repository
+   * is `memory_bank/features/FT-12/brief.md`, and measured over one week in two banks, three reads
+   * were refused as "Not a document" for exactly that prefix — and `bank_create` given the same form
+   * would have written into a nested `memory_bank/memory_bank/`. So the bank's own directory name is
+   * dropped from the front, as are `./` and an absolute path that lies inside the bank.
+   *
+   * A bank that really holds a directory of its own name keeps it: the prefix is dropped only when
+   * no such directory exists and no document sits at the path as given.
+   */
+  relative(pathname: string): string {
+    const given = pathname.trim()
+    if (path.isAbsolute(given)) {
+      const inside = path.relative(this.root, given)
+      if (inside && !inside.startsWith('..') && !path.isAbsolute(inside)) return inside.split(path.sep).join('/')
+      return given
+    }
+    const p = given.split(path.sep).join('/').replace(/^\.?\//, '')
+    const own = `${path.basename(this.root)}/`
+    if (p.startsWith(own) && !this.docs.has(p) && !existsSync(path.join(this.root, path.basename(this.root)))) {
+      return p.slice(own.length)
+    }
+    return p
+  }
+
   /** Full file text of an indexed document, frontmatter included. */
   raw(pathname: string): string | undefined {
-    return this.raws.get(pathname.replace(/^\.?\//, ''))
+    return this.raws.get(this.relative(pathname))
   }
 
   get(pathname: string): BankDoc | undefined {
-    return this.docs.get(pathname.replace(/^\.?\//, ''))
+    return this.docs.get(this.relative(pathname))
   }
 
   all(): BankDoc[] {
