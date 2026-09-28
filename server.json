@@ -6,12 +6,12 @@
     "url": "https://github.com/maxweb4u/mcp-memorybank",
     "source": "github"
   },
-  "version": "0.3.0",
+  "version": "0.3.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@maxweb4u/mcp-memorybank",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "transport": {
         "type": "stdio"
       },
